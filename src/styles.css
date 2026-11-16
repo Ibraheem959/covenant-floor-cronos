@@ -1,0 +1,150 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0b0c12;
+  --color-stone: #0e1016;
+  --color-panel: #14161e;
+  --color-line: #2a2d38;
+  --color-parchment: #f3efe4;
+  --color-muted: #9498a8;
+  --color-gold: #f5c431;
+  --color-gold-deep: #a88410;
+  --color-wine: #d15a52;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "DM Mono", ui-monospace, monospace;
+  --radius-card: 0.8rem;
+}
+
+@layer base {
+  html,
+  body {
+    background: var(--color-ink);
+    color: var(--color-parchment);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 3px;
+  }
+
+  ::selection {
+    background: var(--color-gold);
+    color: var(--color-ink);
+  }
+}
+
+@layer components {
+  .felt {
+    background:
+      radial-gradient(80% 40% at 100% 0%, rgb(245 196 49 / 0.06), transparent 42%),
+      var(--color-ink);
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+  }
+
+  .brand-emblem {
+    display: grid;
+    width: 2.4rem;
+    height: 2.4rem;
+    place-items: center;
+    border: 1px solid rgb(245 196 49 / 0.62);
+    border-radius: 0.75rem 0.75rem 0.75rem 0.25rem;
+    color: var(--color-gold);
+    background: linear-gradient(145deg, rgb(245 196 49 / 0.13), transparent 75%);
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    font-weight: 700;
+  }
+
+  .brand strong {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.11em;
+  }
+
+  .brand strong span {
+    margin-left: 0.3rem;
+    color: var(--color-gold);
+  }
+
+  .brand small {
+    display: block;
+    margin-top: 0.15rem;
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.13em;
+  }
+
+  .nav-link {
+    display: flex;
+    min-height: 2.75rem;
+    align-items: center;
+    gap: 0.75rem;
+    border: 1px solid transparent;
+    border-radius: 0.55rem;
+    padding: 0 0.7rem;
+    color: rgb(243 239 228 / 0.78);
+    font-size: 0.78rem;
+    font-weight: 650;
+    text-align: left;
+  }
+
+  .nav-link-active {
+    border-color: rgb(245 196 49 / 0.22);
+    background: rgb(245 196 49 / 0.09);
+    color: var(--color-gold);
+  }
+
+  .nav-index {
+    width: 1.25rem;
+    color: rgb(148 152 168 / 0.7);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+  }
+
+  .pip {
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 999px;
+    background: transparent;
+  }
+
+  .pip.on {
+    background: var(--color-ink);
+  }
+
+  .num-strip {
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
