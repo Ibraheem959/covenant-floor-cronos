@@ -97,9 +97,9 @@ function Shell() {
               {
                 chainId: "0x19",
                 chainName: "Cronos",
-                nativeCurrency: { name: "Cronos", symbol: "CRO", decimals: 18 },
-                rpcUrls: ["https://evm.cronos.org"],
-                blockExplorerUrls: ["https://cronoscan.com"],
+                nativeCurrency: { name: "CRO", symbol: "CRO", decimals: 18 },
+                rpcUrls: ["https://evm.cronos.com"],
+                blockExplorerUrls: ["https://explorer.cronos.com"],
               },
             ],
           });
@@ -108,6 +108,7 @@ function Shell() {
       const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
       const chain = (await eth.request({ method: "eth_chainId" })) as string;
       send({ type: "wallet", address: accounts[0] ?? "", chainOk: chain.toLowerCase() === "0x19" });
+      setWalletNote("Connected on Cronos. This wallet does not hold the new FELT token until that token is deployed.");
     } catch (error) {
       setWalletNote(error instanceof Error ? error.message : "The wallet did not connect.");
     }

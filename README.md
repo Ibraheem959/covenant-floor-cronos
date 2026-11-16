@@ -22,4 +22,9 @@ npm install
 npm run dev
 ```
 
-Connect a wallet on Cronos mainnet (chain 25). The house contract in `contracts/CovenantFloor.sol` is not published until you deploy it and save the address on the House page.
+Connect an injected wallet on Cronos mainnet (chain 25). That is MetaMask, the Crypto.com Onchain Wallet, or any other wallet that injects `window.ethereum`. It is not StarKey. Gas is CRO.
+
+The chip is a new FELT token (6 decimals) on Cronos. It is not the Supra FELT asset.
+
+Draws are not on chain yet. Supra dVRF 3.0 is the randomness this house is written for (`generateRequest`, then a callback). Cronos is not on Supra's published dVRF network list, so there is no router address to call, and the contract refuses to draw from `prevrandao`. The tables you can click use the same payouts in the browser until that router exists and the house contract is deployed. Save the address on the House page after you publish it.
+

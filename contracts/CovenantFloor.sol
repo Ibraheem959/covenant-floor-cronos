@@ -2,9 +2,12 @@
 pragma solidity 0.8.26;
 
 /// @title Covenant Floor on Cronos
-/// @notice FELT (6 decimals) house. Same payouts as the Supra floor.
-///         Loss split of a net loss: 15% burn, 5% buyback, 10% stakers, 70% stays.
-///         House withdrawal is 2 of 3 and debits the house bank only.
+/// @notice A new FELT token on Cronos EVM (chain 25). Not the Supra FELT asset.
+///         Payouts match the Supra floor. Draws must not use block.prevrandao.
+///         Supra dVRF 3.0 is the randomness this house is built for:
+///         ISupraRouter.generateRequest(functionSig, rngCount, confirmations, clientSeed, clientWallet).
+///         The callback delivers the numbers. Cronos is not on Supra's published dVRF network list,
+///         so the router address stays unset and a draw reverts until that router exists.
 contract Felt {
     string public constant name = "FELT";
     string public constant symbol = "FELT";
@@ -170,9 +173,9 @@ contract CovenantFloor {
         stakers += stakeAmt;
     }
 
-    function _roll(uint256 n) internal returns (uint256) {
-        nonce += 1;
-        return uint256(keccak256(abi.encodePacked(block.prevrandao, msg.sender, nonce, block.number))) % n;
+    /// @dev Not a draw. Cronos has no Supra dVRF router published. Do not hash prevrandao.
+    function _roll(uint256) internal pure returns (uint256) {
+        revert("dVRF router is not set");
     }
 
     function _check(uint256 stake) internal pure {
