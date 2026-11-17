@@ -26,5 +26,8 @@ Connect an injected wallet on Cronos mainnet (chain 25). That is MetaMask, the C
 
 The chip is a new FELT token (6 decimals) on Cronos. It is not the Supra FELT asset.
 
-Draws are not on chain yet. Supra dVRF 3.0 is the randomness this house is written for (`generateRequest`, then a callback). Cronos is not on Supra's published dVRF network list, so there is no router address to call, and the contract refuses to draw from `prevrandao`. The tables you can click use the same payouts in the browser until that router exists and the house contract is deployed. Save the address on the House page after you publish it.
+FELT: `0xb757DBAbf4cc0c93191471e84bdd95201DBDe0a3`  
+House: `0xaFa3ab1FC542cda65b14c57A1A5AE5ca494b88cC`
+
+Supra dVRF is not published for Cronos, and Cronos `prevrandao` is zero, so a same-transaction roll would be predictable. Dice, roulette, slots, and plinko lock the bet, then the next block's hash settles it. Each wallet can claim 10,000 FELT once. The house bank started with 20,000,000 FELT. Poker, keno, blackjack, and the other tables still play in the browser until they are cut the same way.
 

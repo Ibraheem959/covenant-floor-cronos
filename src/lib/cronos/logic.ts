@@ -160,6 +160,12 @@ export type State = {
   address: string;
   chainOk: boolean;
   contract: string;
+  chainWallet: bigint;
+  chainVault: bigint;
+  chainBank: bigint;
+  chainBurned: bigint;
+  chainBuyback: bigint;
+  chainStakers: bigint;
 };
 
 export type Action =
@@ -228,6 +234,8 @@ export type Action =
   | { type: "house-sign"; owner: 0 | 1 | 2 }
   | { type: "house-reject"; owner: 0 | 1 | 2 }
   | { type: "house-execute"; owner: 0 | 1 | 2 }
+  | { type: "chain-play"; game: string; line: string; stake: bigint; payout: bigint }
+  | { type: "synced"; wallet: bigint; vault: bigint; bank: bigint; burned: bigint; buyback: bigint; stakers: bigint }
   | { type: "reset" };
 
 const RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
@@ -314,6 +322,12 @@ export function initialState(): State {
     address: "",
     chainOk: false,
     contract: "",
+    chainWallet: 0n,
+    chainVault: 0n,
+    chainBank: 0n,
+    chainBurned: 0n,
+    chainBuyback: 0n,
+    chainStakers: 0n,
   };
 }
 
@@ -346,6 +360,17 @@ function apply(s: State, a: Action, now: number) {
       return;
     case "contract":
       s.contract = a.address.trim();
+      return;
+    case "synced":
+      s.chainWallet = a.wallet;
+      s.chainVault = a.vault;
+      s.chainBank = a.bank;
+      s.chainBurned = a.burned;
+      s.chainBuyback = a.buyback;
+      s.chainStakers = a.stakers;
+      return;
+    case "chain-play":
+      note(s, a.game, a.line, a.payout - a.stake, toneOf(a.payout, a.stake));
       return;
     case "deposit":
       takeWallet(s, me, a.amount);
@@ -554,7 +579,7 @@ function toneOf(payout: bigint, stakeAmt: bigint): Tone {
   return "loss";
 }
 
-function resultLine(payout: bigint, stakeAmt: bigint, extra: string): string {
+export function resultLine(payout: bigint, stakeAmt: bigint, extra: string): string {
   if (payout > stakeAmt) return `${extra} ${formatFelt(payout)} FELT paid back. Profit ${formatFelt(payout - stakeAmt)}.`;
   if (payout === stakeAmt && payout > 0n) return `${extra} ${formatFelt(payout)} FELT came back.`;
   if (payout > 0n) return `${extra} ${formatFelt(payout)} FELT came back from ${formatFelt(stakeAmt)}.`;

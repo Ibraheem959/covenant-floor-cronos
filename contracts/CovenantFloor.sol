@@ -20,6 +20,16 @@ contract Felt {
 
     constructor(address treasury) {
         _mint(treasury, 1_000_000_000 * 1e6);
+        _mint(address(this), 50_000_000 * 1e6);
+    }
+
+    mapping(address => bool) public dripped;
+    uint256 public constant DRIP = 10_000 * 1e6;
+
+    function drip() external {
+        require(!dripped[msg.sender], "once");
+        dripped[msg.sender] = true;
+        _transfer(address(this), msg.sender, DRIP);
     }
 
     function approve(address spender, uint256 amount) external returns (bool) {
@@ -93,12 +103,17 @@ contract CovenantFloor {
     mapping(address => Mines) public mines;
     mapping(address => Bj) public bj;
     mapping(address => Poker) public poker;
+    mapping(address => Open) public diceBets;
+    mapping(address => Open) public rouletteBets;
+    mapping(address => Open) public slotsBets;
+    mapping(address => Open) public plinkoBets;
 
     uint256 public round = 1;
     uint256 public pot;
     uint256 public totalTickets;
     address[] public ticketOwners;
     mapping(address => uint256) public tickets;
+    uint64 public drawBlock;
 
     uint256 public nextJob = 1;
     Job[] public jobs;
@@ -108,6 +123,7 @@ contract CovenantFloor {
     struct Bj { uint8 phase; uint8 active; uint8[8] cards; uint8[2] counts; uint256[2] bets; bool[2] naturals; uint8 dealerCount; uint8[8] dealer; uint8 used; }
     struct Poker { uint8 phase; uint256 ante; uint8[2] hole; uint8[2] dealer; uint8[5] board; uint8 boardCount; uint8[52] deck; uint8 left; }
     struct Job { uint256 id; address creator; address worker; uint256 pay; uint64 deadline; uint64 submittedAt; uint8 state; string brief; string work; string reason; }
+    struct Open { uint256 stake; uint64 blockNo; uint8 kind; uint256 pick; bool live; }
 
     struct Proposal { address to; uint256 amount; bool[3] sigs; bool open; }
     Proposal public proposal;
@@ -173,9 +189,45 @@ contract CovenantFloor {
         stakers += stakeAmt;
     }
 
-    /// @dev Not a draw. Cronos has no Supra dVRF router published. Do not hash prevrandao.
+    /// @dev Cronos publishes no Supra dVRF router, and prevrandao is zero here.
+    /// A bet locks in this block. Settlement reads that block hash on the next block.
+    function _lock(Open storage o, uint256 stake, uint8 kind, uint256 pick) internal {
+        require(!o.live, "open");
+        o.stake = stake;
+        o.blockNo = uint64(block.number);
+        o.kind = kind;
+        o.pick = pick;
+        o.live = true;
+    }
+
+    function _hash(Open storage o) internal view returns (bytes32 h) {
+        require(o.live, "none");
+        require(block.number > o.blockNo, "wait");
+        require(block.number - o.blockNo <= 256, "expired");
+        h = blockhash(o.blockNo);
+        require(h != bytes32(0), "hash");
+    }
+
+    function _word(bytes32 h, uint256 salt) internal pure returns (uint256) {
+        return uint256(keccak256(abi.encodePacked(h, salt)));
+    }
+
     function _roll(uint256) internal pure returns (uint256) {
-        revert("dVRF router is not set");
+        revert("that table is not on this cut");
+    }
+
+    function _u(uint256 v) internal pure returns (string memory) {
+        if (v == 0) return "0";
+        bytes memory buf = new bytes(32);
+        uint256 i = 32;
+        while (v > 0) {
+            i--;
+            buf[i] = bytes1(uint8(48 + (v % 10)));
+            v /= 10;
+        }
+        bytes memory out = new bytes(32 - i);
+        for (uint256 j; j < out.length; j++) out[j] = buf[i + j];
+        return string(out);
     }
 
     function _check(uint256 stake) internal pure {
@@ -184,16 +236,25 @@ contract CovenantFloor {
 
     function dice(uint8 mode, uint256 target, uint256 stake) external bankOk(stake * 36) {
         _check(stake);
+        if (mode > 2) require(target >= 2 && target <= 12, "sum");
         _take(msg.sender, stake);
-        uint256 sum = _roll(6) + 1 + _roll(6) + 1;
+        _lock(diceBets[msg.sender], stake, mode, target);
+        emit Play(msg.sender, "dice", stake, 0, "locked");
+    }
+
+    function settleDice(address player) external {
+        Open storage o = diceBets[player];
+        bytes32 h = _hash(o);
+        uint8 mode = o.kind;
+        uint256 target = o.pick;
+        uint256 stake = o.stake;
+        delete diceBets[player];
+        uint256 sum = (_word(h, 1) % 6) + 1 + (_word(h, 2) % 6) + 1;
         bool win;
         if (mode == 0) win = sum < 7;
         else if (mode == 1) win = sum > 7;
         else if (mode == 2) win = sum == 7;
-        else {
-            require(target >= 2 && target <= 12, "sum");
-            win = sum == target;
-        }
+        else win = sum == target;
         uint256 payout;
         if (win) {
             if (mode == 0 || mode == 1) payout = stake * 230 / 100;
@@ -203,19 +264,33 @@ contract CovenantFloor {
                 payout = stake * 36 * 96 / ways / 100;
             }
         }
-        _credit(msg.sender, payout);
+        _credit(player, payout);
         _skim(stake, payout);
-        emit Play(msg.sender, "dice", stake, payout, "");
+        emit Play(player, "dice", stake, payout, string.concat("Dice summed to ", _u(sum), "."));
     }
 
     function roulette(uint8 kind, uint256 pick, uint256 stake) external bankOk(stake * 36) {
         _check(stake);
+        if (kind == 0) require(pick <= 36, "n");
+        if (kind == 5) require(pick >= 1 && pick <= 3, "dozen");
+        require(kind <= 5, "kind");
         _take(msg.sender, stake);
-        uint256 n = _roll(37);
+        _lock(rouletteBets[msg.sender], stake, kind, pick);
+        emit Play(msg.sender, "roulette", stake, 0, "locked");
+    }
+
+    function settleRoulette(address player) external {
+        Open storage o = rouletteBets[player];
+        bytes32 h = _hash(o);
+        uint256 stake = o.stake;
+        uint8 kind = o.kind;
+        uint256 pick = o.pick;
+        delete rouletteBets[player];
+        uint256 n = _word(h, 1) % 37;
         uint256 payout = _roulette(kind, pick, n, stake);
-        _credit(msg.sender, payout);
+        _credit(player, payout);
         _skim(stake, payout);
-        emit Play(msg.sender, "roulette", stake, payout, "");
+        emit Play(player, "roulette", stake, payout, string.concat("Ball landed on ", _u(n), "."));
     }
 
     function _roulette(uint8 kind, uint256 pick, uint256 n, uint256 stake) internal pure returns (uint256) {
@@ -242,9 +317,18 @@ contract CovenantFloor {
     function slots(uint256 stake) external bankOk(stake * 25) {
         _check(stake);
         _take(msg.sender, stake);
-        uint256 a = _roll(7);
-        uint256 b = _roll(7);
-        uint256 c = _roll(7);
+        _lock(slotsBets[msg.sender], stake, 0, 0);
+        emit Play(msg.sender, "slots", stake, 0, "locked");
+    }
+
+    function settleSlots(address player) external {
+        Open storage o = slotsBets[player];
+        bytes32 h = _hash(o);
+        uint256 stake = o.stake;
+        delete slotsBets[player];
+        uint256 a = _word(h, 1) % 7;
+        uint256 b = _word(h, 2) % 7;
+        uint256 c = _word(h, 3) % 7;
         uint256 payout;
         if (a == b && b == c) {
             if (a == 0) payout = stake * 25;
@@ -252,21 +336,41 @@ contract CovenantFloor {
             else if (a == 2 || a == 3) payout = stake * 5;
             else payout = stake * 2;
         } else if (a == b || b == c || a == c) payout = stake * 15 / 10;
-        _credit(msg.sender, payout);
+        _credit(player, payout);
         _skim(stake, payout);
-        emit Play(msg.sender, "slots", stake, payout, "");
+        emit Play(player, "slots", stake, payout, string.concat("Reels ", _slot(a), " | ", _slot(b), " | ", _slot(c), "."));
+    }
+
+    function _slot(uint256 n) internal pure returns (string memory) {
+        if (n == 0) return "7";
+        if (n == 1) return "BAR";
+        if (n == 2) return "GEM";
+        if (n == 3) return "BELL";
+        if (n == 4) return "STAR";
+        if (n == 5) return "DROP";
+        return "SPADE";
     }
 
     function plinko(uint8 difficulty, uint256 stake) external bankOk(stake * 34) {
         _check(stake);
         require(difficulty < 3, "board");
         _take(msg.sender, stake);
+        _lock(plinkoBets[msg.sender], stake, difficulty, 0);
+        emit Play(msg.sender, "plinko", stake, 0, "locked");
+    }
+
+    function settlePlinko(address player) external {
+        Open storage o = plinkoBets[player];
+        bytes32 h = _hash(o);
+        uint256 stake = o.stake;
+        uint8 difficulty = o.kind;
+        delete plinkoBets[player];
         uint256 bucket;
-        for (uint256 i; i < 8; i++) bucket += _roll(2);
+        for (uint256 i; i < 8; i++) bucket += _word(h, i + 1) % 2;
         uint256 payout = stake * _plinko(difficulty, bucket) / 1000;
-        _credit(msg.sender, payout);
+        _credit(player, payout);
         _skim(stake, payout);
-        emit Play(msg.sender, "plinko", stake, payout, "");
+        emit Play(player, "plinko", stake, payout, string.concat("The ball finished in bucket ", _u(bucket), "."));
     }
 
     function _plinko(uint8 diff, uint256 bucket) internal pure returns (uint256) {
@@ -314,7 +418,17 @@ contract CovenantFloor {
 
     function draw() external {
         require(totalTickets > 0, "empty");
-        uint256 ticket = _roll(totalTickets);
+        require(drawBlock == 0, "pending");
+        drawBlock = uint64(block.number);
+    }
+
+    function settleDraw() external {
+        require(drawBlock != 0, "none");
+        require(block.number > drawBlock && block.number - drawBlock <= 256, "window");
+        bytes32 h = blockhash(drawBlock);
+        require(h != bytes32(0), "hash");
+        drawBlock = 0;
+        uint256 ticket = uint256(h) % totalTickets;
         uint256 acc;
         address winner = ticketOwners[0];
         for (uint256 i; i < ticketOwners.length; i++) {

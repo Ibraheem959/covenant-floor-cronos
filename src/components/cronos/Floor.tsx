@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Menu, Wallet, X } from "lucide-react";
 import { Area, Cards, Field, Go, PageHead, Picks, Stage, Stat } from "@/components/cronos/bits";
 import { FloorProvider, useFloor } from "@/lib/cronos/store";
+import { FELT, FLOOR } from "@/lib/cronos/addresses";
+import { chainBalances, claimDrip, depositFelt, playOnChain, withdrawFelt } from "@/lib/cronos/chain";
 import {
   FAITH_MIN,
   SEAT_ADDR,
@@ -9,6 +11,7 @@ import {
   handName,
   owedOf,
   parseFelt,
+  resultLine,
   bjTotal,
   type Action,
   type SeatId,
@@ -77,6 +80,28 @@ function Shell() {
   const [walletNote, setWalletNote] = useState("");
   const seat = state.seats[state.acting];
   const copy = COPY[page];
+  const onChain = Boolean(state.address && state.chainOk);
+  const shownVault = onChain ? (state.chainVault ?? 0n) : seat.vault;
+
+  useEffect(() => {
+    if (state.contract !== FLOOR) send({ type: "contract", address: FLOOR });
+  }, [send, state.contract]);
+
+  useEffect(() => {
+    if (!onChain || !state.address) return;
+    let stop = false;
+    const pull = () => {
+      void chainBalances(state.address).then((row) => {
+        if (!stop) send({ type: "synced", wallet: row.wallet, vault: row.vault, bank: row.bank, burned: row.burned, buyback: row.buyback, stakers: row.stakers });
+      }).catch(() => undefined);
+    };
+    pull();
+    const timer = window.setInterval(pull, 12000);
+    return () => {
+      stop = true;
+      window.clearInterval(timer);
+    };
+  }, [onChain, send, state.address]);
 
   async function connect() {
     setWalletNote("");
@@ -108,7 +133,7 @@ function Shell() {
       const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
       const chain = (await eth.request({ method: "eth_chainId" })) as string;
       send({ type: "wallet", address: accounts[0] ?? "", chainOk: chain.toLowerCase() === "0x19" });
-      setWalletNote("Connected on Cronos. This wallet does not hold the new FELT token until that token is deployed.");
+      setWalletNote(chain.toLowerCase() === "0x19" ? "Connected on Cronos. Claim 10,000 FELT on the wallet page. Gas is CRO." : "This wallet is not on Cronos.");
     } catch (error) {
       setWalletNote(error instanceof Error ? error.message : "The wallet did not connect.");
     }
@@ -127,9 +152,9 @@ function Shell() {
               <Brand />
             </div>
             <div className="ml-auto grid justify-items-end gap-2">
-              <p className="text-xs tracking-wide text-muted uppercase">Vault · Seat {state.acting === 0 ? "A" : "B"}</p>
+              <p className="text-xs tracking-wide text-muted uppercase">{onChain ? "Vault · Cronos" : `Vault · Seat ${state.acting === 0 ? "A" : "B"}`}</p>
               <p className="num-strip font-display text-4xl text-gold" data-testid="chip-balance">
-                {formatFelt(seat.vault)}
+                {formatFelt(shownVault)}
               </p>
               <div className="flex flex-wrap justify-end gap-2">
                 <button type="button" onClick={() => send({ type: "act", seat: state.acting === 0 ? 1 : 0 })} className="min-h-11 rounded-full border border-line px-4 text-sm">
@@ -221,6 +246,7 @@ function Body({ page }: { page: PageId }) {
 function useForm() {
   const api = useFloor();
   const [local, setLocal] = useState("");
+  const [busy, setBusy] = useState(false);
   function go(build: () => Action) {
     try {
       setLocal("");
@@ -229,7 +255,23 @@ function useForm() {
       setLocal(error instanceof Error ? error.message : "Check that amount.");
     }
   }
-  return { ...api, local, go };
+  async function run(task: () => Promise<void>) {
+    try {
+      setLocal("");
+      setBusy(true);
+      await task();
+    } catch (error) {
+      setLocal(error instanceof Error ? error.message : "The wallet refused that.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function refresh() {
+    if (!api.state.address) return;
+    const row = await chainBalances(api.state.address);
+    api.send({ type: "synced", wallet: row.wallet, vault: row.vault, bank: row.bank, burned: row.burned, buyback: row.buyback, stakers: row.stakers });
+  }
+  return { ...api, local, go, run, busy, refresh };
 }
 
 function Bomb({ text }: { text: string }) {
@@ -249,11 +291,12 @@ function DiceFace({ n }: { n: number }) {
 }
 
 function DicePage() {
-  const { go, local, state } = useForm();
+  const { go, run, busy, local, state, send } = useForm();
   const [mode, setMode] = useState("0");
   const [target, setTarget] = useState("7");
   const [stake, setStake] = useState("10");
   const sum = Number(/summed to (\d+)/.exec(state.last.line)?.[1] ?? 0);
+  const live = Boolean(state.address && state.chainOk);
   return (
     <div className="grid gap-4">
       <div className="flex items-center gap-3">
@@ -271,17 +314,28 @@ function DicePage() {
       {mode === "3" ? <Field label="Exact sum" value={target} onChange={setTarget} hint="2 to 12." /> : null}
       <Field label="Wager · FELT" value={stake} onChange={setStake} hint="1 to 500,000." />
       <Bomb text={local} />
-      <Go testId="button-dice" onClick={() => go(() => ({ type: "dice", mode: Number(mode), target: Number(target), stake: parseFelt(stake) }))}>Roll dice</Go>
+      {live ? <p className="text-sm text-muted">This roll locks on Cronos, then the next block pays it. The wallet will ask twice.</p> : null}
+      <Go testId="button-dice" disabled={busy} onClick={() => {
+        if (!live) {
+          go(() => ({ type: "dice", mode: Number(mode), target: Number(target), stake: parseFelt(stake) }));
+          return;
+        }
+        void run(async () => {
+          const played = await playOnChain("dice", [Number(mode), BigInt(target), parseFelt(stake)]);
+          send({ type: "chain-play", game: "dice", line: resultLine(played.payout, played.stake, played.detail), stake: played.stake, payout: played.payout });
+        });
+      }}>{busy ? "Waiting for Cronos" : "Roll dice"}</Go>
     </div>
   );
 }
 
 function RoulettePage() {
-  const { go, local, state } = useForm();
+  const { go, run, busy, local, state, send } = useForm();
   const [kind, setKind] = useState("1");
   const [pick, setPick] = useState("0");
   const [stake, setStake] = useState("10");
   const n = /landed on (\d+)/.exec(state.last.line)?.[1];
+  const live = Boolean(state.address && state.chainOk);
   return (
     <div className="grid gap-4">
       <div className="grid h-24 w-24 place-items-center rounded-full border border-gold bg-ink font-display text-3xl">{n ?? "—"}</div>
@@ -289,37 +343,66 @@ function RoulettePage() {
       {kind === "0" || kind === "5" ? <Field label={kind === "5" ? "Dozen 1–3" : "Number 0–36"} value={pick} onChange={setPick} /> : null}
       <Field label="Wager · FELT" value={stake} onChange={setStake} />
       <Bomb text={local} />
-      <Go onClick={() => go(() => ({ type: "roulette", kind: Number(kind), pick: Number(pick), stake: parseFelt(stake) }))}>Spin</Go>
+      <Go disabled={busy} onClick={() => {
+        if (!live) {
+          go(() => ({ type: "roulette", kind: Number(kind), pick: Number(pick), stake: parseFelt(stake) }));
+          return;
+        }
+        void run(async () => {
+          const played = await playOnChain("roulette", [Number(kind), BigInt(pick), parseFelt(stake)]);
+          send({ type: "chain-play", game: "roulette", line: resultLine(played.payout, played.stake, played.detail), stake: played.stake, payout: played.payout });
+        });
+      }}>{busy ? "Waiting for Cronos" : "Spin"}</Go>
     </div>
   );
 }
 
 function SlotsPage() {
-  const { go, local, state } = useForm();
+  const { go, run, busy, local, state, send } = useForm();
   const [stake, setStake] = useState("10");
-  const reels = /Reels (.+)\./.exec(state.last.line)?.[1]?.split(" · ") ?? [];
+  const reels = /Reels (.+)\./.exec(state.last.line)?.[1]?.split(/\s*(?:·|\|)\s*/) ?? [];
+  const live = Boolean(state.address && state.chainOk);
   return (
     <div className="grid gap-4">
       <div className="flex gap-2">{[0, 1, 2].map((i) => <div key={i} className="grid h-20 w-20 place-items-center rounded-lg border border-line bg-ink font-display text-xl">{reels[i] ?? "—"}</div>)}</div>
       <Field label="Wager · FELT" value={stake} onChange={setStake} />
       <Bomb text={local} />
-      <Go onClick={() => go(() => ({ type: "slots", stake: parseFelt(stake) }))}>Spin</Go>
+      <Go disabled={busy} onClick={() => {
+        if (!live) {
+          go(() => ({ type: "slots", stake: parseFelt(stake) }));
+          return;
+        }
+        void run(async () => {
+          const played = await playOnChain("slots", [parseFelt(stake)]);
+          send({ type: "chain-play", game: "slots", line: resultLine(played.payout, played.stake, played.detail), stake: played.stake, payout: played.payout });
+        });
+      }}>{busy ? "Waiting for Cronos" : "Spin"}</Go>
     </div>
   );
 }
 
 function PlinkoPage() {
-  const { go, local, state } = useForm();
+  const { go, run, busy, local, state, send } = useForm();
   const [diff, setDiff] = useState("1");
   const [stake, setStake] = useState("10");
   const bucket = Number(/bucket (\d+)/.exec(state.last.line)?.[1] ?? -1);
+  const live = Boolean(state.address && state.chainOk);
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap gap-2">{Array.from({ length: 9 }, (_, i) => <div key={i} className={`grid h-11 w-11 place-items-center rounded-lg border text-sm ${i === bucket ? "border-gold bg-gold text-ink" : "border-line"}`}>{i}</div>)}</div>
       <Picks value={diff} onChange={setDiff} options={[{ id: "0", label: "Low" }, { id: "1", label: "Medium" }, { id: "2", label: "High" }]} />
       <Field label="Wager · FELT" value={stake} onChange={setStake} />
       <Bomb text={local} />
-      <Go onClick={() => go(() => ({ type: "plinko", difficulty: Number(diff), stake: parseFelt(stake) }))}>Drop</Go>
+      <Go disabled={busy} onClick={() => {
+        if (!live) {
+          go(() => ({ type: "plinko", difficulty: Number(diff), stake: parseFelt(stake) }));
+          return;
+        }
+        void run(async () => {
+          const played = await playOnChain("plinko", [Number(diff), parseFelt(stake)]);
+          send({ type: "chain-play", game: "plinko", line: resultLine(played.payout, played.stake, played.detail), stake: played.stake, payout: played.payout });
+        });
+      }}>{busy ? "Waiting for Cronos" : "Drop"}</Go>
     </div>
   );
 }
@@ -669,23 +752,38 @@ function RacePage() {
 }
 
 function WalletPage() {
-  const { state, send, go, local } = useForm();
+  const { state, send, go, run, busy, local, refresh } = useForm();
   const [amount, setAmount] = useState("1000");
   const [arm, setArm] = useState(false);
   const seat = state.seats[state.acting];
+  const live = Boolean(state.address && state.chainOk);
   return (
     <div className="grid gap-4">
       <div className="grid gap-3 sm:grid-cols-3">
-        <Stat label="Wallet" value={`${formatFelt(seat.wallet)} FELT`} />
-        <Stat label="Vault" value={`${formatFelt(seat.vault)} FELT`} />
-        <Stat label="CRO" value={seat.cro.toString()} />
+        <Stat label="Wallet" value={`${formatFelt(live ? (state.chainWallet ?? 0n) : seat.wallet)} FELT`} />
+        <Stat label="Vault" value={`${formatFelt(live ? (state.chainVault ?? 0n) : seat.vault)} FELT`} />
+        <Stat label="CRO" value={live ? "gas" : seat.cro.toString()} />
       </div>
       <Field label="Amount · FELT" value={amount} onChange={setAmount} />
       <div className="flex flex-wrap gap-2">
-        <Go onClick={() => go(() => ({ type: "deposit", amount: parseFelt(amount) }))}>Deposit to vault</Go>
-        <Go quiet onClick={() => go(() => ({ type: "withdraw", amount: parseFelt(amount) }))}>Withdraw</Go>
+        {live ? <Go disabled={busy} onClick={() => void run(async () => { await claimDrip(); await refresh(); })}>Claim 10,000 FELT</Go> : null}
+        <Go disabled={busy} onClick={() => {
+          if (!live) {
+            go(() => ({ type: "deposit", amount: parseFelt(amount) }));
+            return;
+          }
+          void run(async () => { await depositFelt(parseFelt(amount)); await refresh(); });
+        }}>Deposit to vault</Go>
+        <Go quiet disabled={busy} onClick={() => {
+          if (!live) {
+            go(() => ({ type: "withdraw", amount: parseFelt(amount) }));
+            return;
+          }
+          void run(async () => { await withdrawFelt(parseFelt(amount)); await refresh(); });
+        }}>Withdraw</Go>
       </div>
-      <p className="text-sm text-muted">House bank {formatFelt(state.bank)} FELT. Burned {formatFelt(state.burned)}. Buyback {formatFelt(state.buyback)}. Set aside for stakers {formatFelt(state.stakers)}.</p>
+      <p className="text-sm text-muted">House bank {formatFelt(live ? (state.chainBank ?? 0n) : state.bank)} FELT. Burned {formatFelt(live ? (state.chainBurned ?? 0n) : state.burned)}. Buyback {formatFelt(live ? (state.chainBuyback ?? 0n) : state.buyback)}. Set aside for stakers {formatFelt(live ? (state.chainStakers ?? 0n) : state.stakers)}.</p>
+      <p className="text-sm text-muted">FELT {FELT}. Each wallet can claim 10,000 FELT once. CRO only pays gas.</p>
       {arm ? <Go quiet onClick={() => send({ type: "reset" })}>Confirm reset of both practice seats</Go> : <Go quiet onClick={() => setArm(true)}>Reset practice seats</Go>}
       <Bomb text={local} />
     </div>
@@ -782,8 +880,8 @@ function HousePage() {
         <Stat label="Staker pot" value={`${formatFelt(state.stakers)} FELT`} />
         <Stat label="Burned" value={`${formatFelt(state.burned)} FELT`} />
       </div>
-      <p className="text-sm text-muted">Of a net loss, 15% is burned, 5% is buyback, 10% is set aside for stakers, and 70% stays in the house. Buyback is {formatFelt(state.buyback)} FELT.</p>
-      <p className="text-sm text-muted">{state.contract ? `House contract ${state.contract}` : "The house contract is not published on Cronos yet. These seats play the same rules."}</p>
+      <p className="text-sm text-muted">Of a net loss, 15% is burned, 5% is buyback, 10% is set aside for stakers, and 70% stays in the house. Buyback is {formatFelt(state.chainOk ? (state.chainBuyback ?? 0n) : state.buyback)} FELT.</p>
+      <p className="text-sm text-muted">House {FLOOR}. FELT {FELT}. Dice, roulette, slots, and plinko settle on that contract when the Cronos wallet is connected. The other tables still use the practice seats.</p>
       <Field label="Published contract" value={contract} onChange={setContract} hint="Paste the Cronos address after you publish." />
       <Go quiet onClick={() => send({ type: "contract", address: contract })}>Save contract</Go>
       <Picks value={owner} onChange={setOwner} options={[{ id: "0", label: "Owner 1" }, { id: "1", label: "Owner 2" }, { id: "2", label: "Owner 3" }]} />
