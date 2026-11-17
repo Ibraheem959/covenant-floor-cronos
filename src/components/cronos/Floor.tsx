@@ -1,19 +1,16 @@
 import { useEffect, useState } from "react";
 import { Menu, Wallet, X } from "lucide-react";
-import { Area, Cards, Field, Go, Picks, Stage, Stat } from "@/components/cronos/bits";
+import { Area, Field, Go, Picks, Stage, Stat } from "@/components/cronos/bits";
+import { PickPage, BaccaratPage, BjPage, DicePage, DuelPage, HiloPage, KenoPage, LotteryPage, MinesPage, PlinkoPage, PokerPage, RoulettePage, SlotsPage, TablePage } from "@/components/cronos/tables";
 import { FloorProvider, useFloor } from "@/lib/cronos/store";
 import { FLOOR } from "@/lib/cronos/addresses";
-import { chainBalances, claimDrip, depositFelt, playOnChain, withdrawFelt } from "@/lib/cronos/chain";
+import { chainBalances, claimDrip, depositFelt, withdrawFelt } from "@/lib/cronos/chain";
 import {
   FAITH_MIN,
   formatFelt,
-  handName,
   owedOf,
   parseFelt,
-  resultLine,
-  bjTotal,
   type Action,
-  type SeatId,
 } from "@/lib/cronos/logic";
 
 const NAV = [
@@ -144,6 +141,7 @@ function Shell() {
   const stakers = onChain ? (state.chainStakers ?? 0n) : state.stakers;
 
   return (
+    <PickPage.Provider value={(id) => { const hit = NAV.find(([page]) => page === id); if (hit) setPage(hit[0]); }}>
     <div className="app-noise app-frame min-h-[100dvh]">
       <div className="flex min-h-[100dvh]">
         <aside className="app-sidebar hidden w-[224px] shrink-0 flex-col border-r border-line px-4 py-5 lg:flex">
@@ -189,16 +187,18 @@ function Shell() {
                 </div>
                 <div className="heading-mark hidden sm:grid">F<i /></div>
               </div>
-              <div className="flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-line bg-panel/70 px-4 py-3">
-                <div>
-                  <p className="text-[10px] tracking-[.14em] text-muted uppercase">Vault</p>
-                  <p className="num-strip text-3xl text-gold" data-testid="chip-balance">{formatFelt(shownVault)}</p>
+              {TABLE_PAGES.has(page) ? null : (
+                <div className="flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-line bg-panel/70 px-4 py-3">
+                  <div>
+                    <p className="text-[10px] tracking-[.14em] text-muted uppercase">Vault</p>
+                    <p className="num-strip text-3xl text-gold" data-testid="chip-balance">{formatFelt(shownVault)}</p>
+                  </div>
                 </div>
-              </div>
+              )}
               {state.error ? <p className="rounded-lg border border-wine px-3 py-3 text-sm text-wine">{state.error}</p> : null}
               {walletNote ? <p className="text-sm text-muted">{walletNote}</p> : null}
               <Body page={page} />
-              {page !== "house" && state.last.game === page ? <Stage title={state.last.title} line={state.last.line} tone={state.last.tone} /> : null}
+              {!TABLE_PAGES.has(page) && page !== "house" && state.last.game === page ? <Stage title={state.last.title} line={state.last.line} tone={state.last.tone} /> : null}
             </section>
             <aside className="right-rail overflow-hidden">
               <div className="flex items-center justify-between px-4 pt-4">
@@ -225,6 +225,7 @@ function Shell() {
         </main>
       </div>
     </div>
+    </PickPage.Provider>
   );
 }
 
@@ -267,6 +268,7 @@ function RailRow({ label, value, hot }: { label: string; value: string; hot?: bo
   );
 }
 
+const TABLE_PAGES = new Set(["dice", "roulette", "slots", "plinko", "keno", "baccarat", "hi-lo", "mines", "blackjack", "poker", "duel", "table"]);
 function Body({ page }: { page: PageId }) {
   if (page === "lottery") return <LotteryPage />;
   if (page === "desk") return <DeskPage />;
@@ -324,409 +326,6 @@ function useForm() {
 function Bomb({ text }: { text: string }) {
   if (!text) return null;
   return <p className="text-sm text-wine">{text}</p>;
-}
-
-function DiceFace({ n }: { n: number }) {
-  const pips: Record<number, number[]> = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
-  return (
-    <div className="grid h-16 w-16 grid-cols-3 grid-rows-3 gap-1 rounded-lg bg-parchment p-2">
-      {Array.from({ length: 9 }, (_, i) => (
-        <i key={i} className={`pip justify-self-center self-center ${pips[n]?.includes(i) ? "on" : ""}`} />
-      ))}
-    </div>
-  );
-}
-
-function DicePage() {
-  const { go, run, busy, local, state, send } = useForm();
-  const [mode, setMode] = useState("0");
-  const [target, setTarget] = useState("7");
-  const [stake, setStake] = useState("10");
-  const sum = Number(/summed to (\d+)/.exec(state.last.line)?.[1] ?? 0);
-  const live = Boolean(state.address && state.chainOk);
-  return (
-    <div className="grid gap-4">
-      <div className="flex items-center gap-3">
-        {sum >= 2 ? (
-          <>
-            <DiceFace n={Math.min(6, Math.max(1, sum - 6))} />
-            <DiceFace n={sum - Math.min(6, Math.max(1, sum - 6))} />
-            <strong className="font-display text-3xl">{sum}</strong>
-          </>
-        ) : (
-          <p className="text-sm text-muted">Two dice. The sum is what pays.</p>
-        )}
-      </div>
-      <Picks value={mode} onChange={setMode} options={[{ id: "0", label: "Under 7" }, { id: "1", label: "Over 7" }, { id: "2", label: "Exact 7" }, { id: "3", label: "Exact sum" }]} />
-      {mode === "3" ? <Field label="Exact sum" value={target} onChange={setTarget} hint="2 to 12." /> : null}
-      <Field label="Wager · FELT" value={stake} onChange={setStake} hint="1 to 500,000." />
-      <Bomb text={local} />
-      <Go testId="button-dice" disabled={busy} onClick={() => {
-        if (!live) {
-          go(() => ({ type: "dice", mode: Number(mode), target: Number(target), stake: parseFelt(stake) }));
-          return;
-        }
-        void run(async () => {
-          const played = await playOnChain("dice", [Number(mode), BigInt(target), parseFelt(stake)]);
-          send({ type: "chain-play", game: "dice", line: resultLine(played.payout, played.stake, played.detail), stake: played.stake, payout: played.payout });
-        });
-      }}>{busy ? "Waiting for Cronos" : "Roll dice"}</Go>
-    </div>
-  );
-}
-
-function RoulettePage() {
-  const { go, run, busy, local, state, send } = useForm();
-  const [kind, setKind] = useState("1");
-  const [pick, setPick] = useState("0");
-  const [stake, setStake] = useState("10");
-  const n = /landed on (\d+)/.exec(state.last.line)?.[1];
-  const live = Boolean(state.address && state.chainOk);
-  return (
-    <div className="grid gap-4">
-      <div className="grid h-24 w-24 place-items-center rounded-full border border-gold bg-ink font-display text-3xl">{n ?? "—"}</div>
-      <Picks value={kind} onChange={setKind} options={[{ id: "0", label: "Number" }, { id: "1", label: "Red" }, { id: "2", label: "Black" }, { id: "3", label: "Even" }, { id: "4", label: "Odd" }, { id: "5", label: "Dozen" }]} />
-      {kind === "0" || kind === "5" ? <Field label={kind === "5" ? "Dozen 1–3" : "Number 0–36"} value={pick} onChange={setPick} /> : null}
-      <Field label="Wager · FELT" value={stake} onChange={setStake} />
-      <Bomb text={local} />
-      <Go disabled={busy} onClick={() => {
-        if (!live) {
-          go(() => ({ type: "roulette", kind: Number(kind), pick: Number(pick), stake: parseFelt(stake) }));
-          return;
-        }
-        void run(async () => {
-          const played = await playOnChain("roulette", [Number(kind), BigInt(pick), parseFelt(stake)]);
-          send({ type: "chain-play", game: "roulette", line: resultLine(played.payout, played.stake, played.detail), stake: played.stake, payout: played.payout });
-        });
-      }}>{busy ? "Waiting for Cronos" : "Spin"}</Go>
-    </div>
-  );
-}
-
-function SlotsPage() {
-  const { go, run, busy, local, state, send } = useForm();
-  const [stake, setStake] = useState("10");
-  const reels = /Reels (.+)\./.exec(state.last.line)?.[1]?.split(/\s*(?:·|\|)\s*/) ?? [];
-  const live = Boolean(state.address && state.chainOk);
-  return (
-    <div className="grid gap-4">
-      <div className="flex gap-2">{[0, 1, 2].map((i) => <div key={i} className="grid h-20 w-20 place-items-center rounded-lg border border-line bg-ink font-display text-xl">{reels[i] ?? "—"}</div>)}</div>
-      <Field label="Wager · FELT" value={stake} onChange={setStake} />
-      <Bomb text={local} />
-      <Go disabled={busy} onClick={() => {
-        if (!live) {
-          go(() => ({ type: "slots", stake: parseFelt(stake) }));
-          return;
-        }
-        void run(async () => {
-          const played = await playOnChain("slots", [parseFelt(stake)]);
-          send({ type: "chain-play", game: "slots", line: resultLine(played.payout, played.stake, played.detail), stake: played.stake, payout: played.payout });
-        });
-      }}>{busy ? "Waiting for Cronos" : "Spin"}</Go>
-    </div>
-  );
-}
-
-function PlinkoPage() {
-  const { go, run, busy, local, state, send } = useForm();
-  const [diff, setDiff] = useState("1");
-  const [stake, setStake] = useState("10");
-  const bucket = Number(/bucket (\d+)/.exec(state.last.line)?.[1] ?? -1);
-  const live = Boolean(state.address && state.chainOk);
-  return (
-    <div className="grid gap-4">
-      <div className="flex flex-wrap gap-2">{Array.from({ length: 9 }, (_, i) => <div key={i} className={`grid h-11 w-11 place-items-center rounded-lg border text-sm ${i === bucket ? "border-gold bg-gold text-ink" : "border-line"}`}>{i}</div>)}</div>
-      <Picks value={diff} onChange={setDiff} options={[{ id: "0", label: "Low" }, { id: "1", label: "Medium" }, { id: "2", label: "High" }]} />
-      <Field label="Wager · FELT" value={stake} onChange={setStake} />
-      <Bomb text={local} />
-      <Go disabled={busy} onClick={() => {
-        if (!live) {
-          go(() => ({ type: "plinko", difficulty: Number(diff), stake: parseFelt(stake) }));
-          return;
-        }
-        void run(async () => {
-          const played = await playOnChain("plinko", [Number(diff), parseFelt(stake)]);
-          send({ type: "chain-play", game: "plinko", line: resultLine(played.payout, played.stake, played.detail), stake: played.stake, payout: played.payout });
-        });
-      }}>{busy ? "Waiting for Cronos" : "Drop"}</Go>
-    </div>
-  );
-}
-
-function KenoPage() {
-  const { go, local } = useForm();
-  const [picks, setPicks] = useState<number[]>([]);
-  const [stake, setStake] = useState("10");
-  function toggle(n: number) {
-    setPicks((cur) => (cur.includes(n) ? cur.filter((x) => x !== n) : cur.length >= 10 ? cur : [...cur, n]));
-  }
-  return (
-    <div className="grid gap-4">
-      <div className="grid grid-cols-8 gap-1 sm:grid-cols-10">
-        {Array.from({ length: 40 }, (_, i) => i + 1).map((n) => (
-          <button key={n} type="button" onClick={() => toggle(n)} className={`min-h-11 rounded-lg border text-sm ${picks.includes(n) ? "border-gold bg-gold text-ink" : "border-line"}`}>{n}</button>
-        ))}
-      </div>
-      <Field label="Wager · FELT" value={stake} onChange={setStake} hint="Up to 10,000 FELT." />
-      <Bomb text={local} />
-      <Go onClick={() => go(() => ({ type: "keno", picks, stake: parseFelt(stake) }))}>Play keno</Go>
-    </div>
-  );
-}
-
-function BaccaratPage() {
-  const { go, local } = useForm();
-  const [side, setSide] = useState("0");
-  const [stake, setStake] = useState("10");
-  return (
-    <div className="grid gap-4">
-      <Picks value={side} onChange={setSide} options={[{ id: "0", label: "Player" }, { id: "1", label: "Banker" }, { id: "2", label: "Tie" }]} />
-      <Field label="Wager · FELT" value={stake} onChange={setStake} />
-      <Bomb text={local} />
-      <Go onClick={() => go(() => ({ type: "baccarat", side: Number(side), stake: parseFelt(stake) }))}>Deal</Go>
-    </div>
-  );
-}
-
-function HiloPage() {
-  const { state, send, local, go } = useForm();
-  const [stake, setStake] = useState("10");
-  const hand = state.hilo[state.acting];
-  return (
-    <div className="grid gap-4">
-      <div className="grid h-24 w-16 place-items-center rounded-lg border border-line bg-parchment font-display text-3xl text-ink">{hand ? (hand.card === 1 ? "A" : hand.card > 10 ? ["J", "Q", "K"][hand.card - 11] : hand.card) : "—"}</div>
-      {hand?.alive ? (
-        <div className="flex flex-wrap gap-2">
-          <Go onClick={() => send({ type: "hilo-guess", higher: true })}>Higher</Go>
-          <Go quiet onClick={() => send({ type: "hilo-guess", higher: false })}>Lower</Go>
-          <Go quiet onClick={() => send({ type: "hilo-cash" })}>Cash out</Go>
-        </div>
-      ) : (
-        <>
-          <Field label="Wager · FELT" value={stake} onChange={setStake} />
-          <Go onClick={() => go(() => ({ type: "hilo-deal", stake: parseFelt(stake) }))}>Deal</Go>
-        </>
-      )}
-      <Bomb text={local} />
-    </div>
-  );
-}
-
-function MinesPage() {
-  const { state, send, go, local } = useForm();
-  const [stake, setStake] = useState("10");
-  const board = state.mines[state.acting];
-  return (
-    <div className="grid gap-4">
-      <div className="grid max-w-sm grid-cols-5 gap-1">
-        {Array.from({ length: 25 }, (_, tile) => {
-          const open = board?.revealed.includes(tile);
-          const boom = board?.boom === tile;
-          return (
-            <button key={tile} type="button" disabled={!board?.alive} onClick={() => send({ type: "mines-reveal", tile })} className={`min-h-11 rounded-lg border text-sm ${boom ? "border-wine text-wine" : open ? "border-gold text-gold" : "border-line"}`}>
-              {boom ? "Mine" : open ? "Safe" : tile}
-            </button>
-          );
-        })}
-      </div>
-      {board?.alive ? <Go onClick={() => send({ type: "mines-cash" })}>Cash out</Go> : (
-        <>
-          <Field label="Wager · FELT" value={stake} onChange={setStake} />
-          <Go onClick={() => go(() => ({ type: "mines-start", stake: parseFelt(stake) }))}>Start round</Go>
-        </>
-      )}
-      <Bomb text={local} />
-    </div>
-  );
-}
-
-function BjPage() {
-  const { state, send, go, local } = useForm();
-  const [stake, setStake] = useState("10");
-  const bj = state.bj[state.acting];
-  const open = bj && bj.phase === 1;
-  return (
-    <div className="grid gap-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="grid gap-2"><span className="text-xs text-muted uppercase">Dealer</span><Cards cards={bj?.dealer ?? []} /></div>
-        <div className="grid gap-2">
-          <span className="text-xs text-muted uppercase">You {open ? `· hand ${bj.active + 1}` : ""}</span>
-          {(bj?.hands ?? [[]]).map((hand, index) => (
-            <div key={index} className="grid gap-1">
-              <Cards cards={hand} />
-              {hand.length ? <span className="text-xs text-muted">{bjTotal(hand)}</span> : null}
-            </div>
-          ))}
-        </div>
-      </div>
-      {open ? (
-        <div className="flex flex-wrap gap-2">
-          <Go onClick={() => send({ type: "bj-hit" })}>Hit</Go>
-          <Go quiet onClick={() => send({ type: "bj-stand" })}>Stand</Go>
-          <Go quiet onClick={() => send({ type: "bj-double" })}>Double</Go>
-          <Go quiet onClick={() => send({ type: "bj-split" })}>Split</Go>
-        </div>
-      ) : (
-        <>
-          <Field label="Even wager · FELT" value={stake} onChange={setStake} />
-          <Go onClick={() => go(() => ({ type: "bj-deal", stake: parseFelt(stake) }))}>Deal</Go>
-        </>
-      )}
-      <Bomb text={local} />
-    </div>
-  );
-}
-
-function PokerPage() {
-  const { state, send, go, local } = useForm();
-  const [ante, setAnte] = useState("10");
-  const hand = state.poker[state.acting];
-  const showDealer = Boolean(hand && hand.phase === 0 && hand.scoreP);
-  return (
-    <div className="grid gap-4">
-      <div className="grid gap-3">
-        <div className="grid gap-2"><span className="text-xs text-muted uppercase">Board</span><Cards cards={hand?.board ?? []} /></div>
-        <div className="grid gap-2"><span className="text-xs text-muted uppercase">Your hole cards</span><Cards cards={hand?.hole ?? []} /></div>
-        {showDealer ? (
-          <div className="grid gap-2">
-            <span className="text-xs text-muted uppercase">House · {hand ? handName(hand.scoreD) : ""}</span>
-            <Cards cards={hand?.dealer ?? []} />
-          </div>
-        ) : null}
-      </div>
-      {hand?.phase === 1 ? (
-        <div className="flex flex-wrap gap-2">
-          <Go onClick={() => send({ type: "poker-call" })}>Call · 2× ante</Go>
-          <Go quiet onClick={() => send({ type: "poker-fold" })}>Fold</Go>
-        </div>
-      ) : (
-        <>
-          <Field label="Ante · FELT" value={ante} onChange={setAnte} hint="1 to 5,000. A call is twice this." />
-          <Go testId="button-poker" onClick={() => go(() => ({ type: "poker-deal", ante: parseFelt(ante) }))}>Deal</Go>
-        </>
-      )}
-      <Bomb text={local} />
-    </div>
-  );
-}
-
-function DuelPage() {
-  const { state, send, go, local } = useForm();
-  const [buy, setBuy] = useState("20");
-  const [extra, setExtra] = useState("2");
-  const p = state.pvp;
-  const me = state.acting;
-  const street = ["", "", "Preflop", "Flop", "Turn", "River"][p?.phase ?? 0] ?? "";
-  return (
-    <div className="grid gap-4">
-      {p && p.phase >= 2 ? (
-        <>
-          <p className="text-sm text-muted">{street}. Pot {formatFelt(p.pot)}. To act: seat {p.toAct === 0 ? "A" : "B"}.</p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {([0, 1] as const).map((id) => (
-              <div key={id} className="grid gap-2 rounded-lg border border-line p-3">
-                <span className="text-xs text-muted uppercase">Seat {id === 0 ? "A" : "B"} · stack {formatFelt(p.stack[id])}</span>
-                {id === me || p.phase === 0 ? <Cards cards={p.hole[id]} /> : <p className="text-sm text-muted">Two cards face down.</p>}
-              </div>
-            ))}
-          </div>
-          <Cards cards={p.board} />
-          {p.toAct === me ? (
-            <div className="grid gap-3">
-              <div className="flex flex-wrap gap-2">
-                <Go quiet onClick={() => send({ type: "pvp-check" })}>Check</Go>
-                <Go onClick={() => send({ type: "pvp-call" })}>Call</Go>
-                <Go quiet onClick={() => send({ type: "pvp-allin" })}>All-in</Go>
-                <Go quiet onClick={() => send({ type: "pvp-fold" })}>Fold</Go>
-              </div>
-              <Field label="Raise extra · FELT" value={extra} onChange={setExtra} hint="Added on top of a call." />
-              <Go quiet onClick={() => go(() => ({ type: "pvp-raise", extra: parseFelt(extra) }))}>Raise</Go>
-            </div>
-          ) : <p className="text-sm text-muted">Switch seats to take the other chair.</p>}
-        </>
-      ) : (
-        <>
-          <Field label="Buy-in · whole FELT" value={buy} onChange={setBuy} hint="20 to 50,000. You are the small blind." />
-          <div className="flex flex-wrap gap-2">
-            <Go onClick={() => go(() => ({ type: "pvp-host", buy: parseFelt(buy) }))}>Host the table</Go>
-            <Go quiet onClick={() => send({ type: "pvp-join" })}>Sit and deal</Go>
-            <Go quiet onClick={() => send({ type: "pvp-leave" })}>Leave</Go>
-          </div>
-        </>
-      )}
-      <Bomb text={local} />
-    </div>
-  );
-}
-
-function TablePage() {
-  const { state, send, go, local } = useForm();
-  const [stake, setStake] = useState("10");
-  const [chair, setChair] = useState("0");
-  const t = state.table;
-  return (
-    <div className="grid gap-4">
-      <div className="grid gap-2"><span className="text-xs text-muted uppercase">Dealer</span><Cards cards={t.dealer} /></div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {([0, 1] as const).map((id) => (
-          <div key={id} className="grid gap-2 rounded-lg border border-line p-3">
-            <span className="text-xs text-muted uppercase">Seat {id === 0 ? "A" : "B"} {t.in[id] ? `· ${formatFelt(t.bet[id])}` : "· empty"} {t.done[id] ? "· stood" : ""}</span>
-            <Cards cards={t.hands[id]} />
-            {t.hands[id].length ? <span className="text-xs text-muted">{bjTotal(t.hands[id])}</span> : null}
-          </div>
-        ))}
-      </div>
-      {t.phase === 2 ? (
-        <div className="flex flex-wrap gap-2">
-          <Go onClick={() => send({ type: "table-hit" })}>Hit</Go>
-          <Go quiet onClick={() => send({ type: "table-stand" })}>Stand</Go>
-          <Go quiet onClick={() => send({ type: "table-double" })}>Double</Go>
-        </div>
-      ) : (
-        <>
-          <Picks value={chair} onChange={setChair} options={[{ id: "0", label: "Seat A" }, { id: "1", label: "Seat B" }]} />
-          <Field label="Even wager · FELT" value={stake} onChange={setStake} />
-          <div className="flex flex-wrap gap-2">
-            <Go onClick={() => go(() => {
-              const stakeAmt = parseFelt(stake);
-              const seat = Number(chair) as SeatId;
-              send({ type: "act", seat });
-              return { type: "table-sit", seat, stake: stakeAmt };
-            })}>Take that seat</Go>
-            <Go quiet onClick={() => send({ type: "table-leave" })}>Leave</Go>
-          </div>
-        </>
-      )}
-      <Bomb text={local} />
-    </div>
-  );
-}
-
-function LotteryPage() {
-  const { state, send, go, local } = useForm();
-  const [n, setN] = useState("1");
-  const [burn, setBurn] = useState("0");
-  return (
-    <div className="grid gap-4">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Stat label="Round" value={String(state.round)} />
-        <Stat label="Pot" value={`${formatFelt(state.pot)} FELT`} />
-        <Stat label="Scrolls in" value={String(state.totalTickets)} />
-      </div>
-      <Field label="Scrolls to pay" value={n} onChange={setN} />
-      <Field label="Scrolls to burn" value={burn} onChange={setBurn} hint="Burned scrolls still enter the draw." />
-      <div className="flex flex-wrap gap-2">
-        <Go onClick={() => go(() => ({ type: "scroll-pay", n: Number(n) }))}>Pay into pot</Go>
-        <Go quiet onClick={() => go(() => ({ type: "scroll-burn", n: Number(n) }))}>Burn scrolls</Go>
-        <Go quiet onClick={() => go(() => ({ type: "scroll-both", pay: Number(n), burn: Number(burn) }))}>Pay and burn</Go>
-        <Go onClick={() => send({ type: "draw" })}>Draw</Go>
-      </div>
-      <ul className="grid gap-1 text-sm text-muted">
-        {state.tickets.map((row) => <li key={row.seat}>Seat {row.seat === 0 ? "A" : "B"} · {row.n} scrolls</li>)}
-      </ul>
-      <Bomb text={local} />
-    </div>
-  );
 }
 
 function DeskPage() {
