@@ -12,7 +12,7 @@ import {
   RouletteStage,
   SlotsStage,
 } from "@/components/cronos/stage";
-import { claimDrip, depositFelt, playOnChain, withdrawFelt } from "@/lib/cronos/chain";
+import { chainBalances, claimDrip, depositFelt, playOnChain, withdrawFelt } from "@/lib/cronos/chain";
 import { useFloor } from "@/lib/cronos/store";
 import { bjTotal, formatFelt, handName, parseFelt, resultLine, type Action } from "@/lib/cronos/logic";
 
@@ -29,8 +29,12 @@ function usePlay() {
     try {
       setLocal("");
       setBusy(true);
-      if (live && chain) await chain();
-      else {
+      if (chain) {
+        if (!live) throw new Error("Connect a Cronos wallet.");
+        await chain();
+        const row = await chainBalances(api.state.address);
+        api.send({ type: "synced", wallet: row.wallet, vault: row.vault, bank: row.bank, burned: row.burned, buyback: row.buyback, stakers: row.stakers });
+      } else {
         await new Promise((resolve) => window.setTimeout(resolve, wait));
         api.send(action());
       }
@@ -49,8 +53,7 @@ function Cashier() {
   const [amount, setAmount] = useState("100");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const seat = state.seats[state.acting];
-  const vault = live ? ((state as { chainVault?: bigint }).chainVault ?? 0n) : seat.vault;
+  const vault = state.address ? state.chainVault : 0n;
 
   async function run(task: () => Promise<void> | void) {
     try {
@@ -62,6 +65,11 @@ function Cashier() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function refresh() {
+    const row = await chainBalances(state.address);
+    send({ type: "synced", wallet: row.wallet, vault: row.vault, bank: row.bank, burned: row.burned, buyback: row.buyback, stakers: row.stakers });
   }
 
   return (
@@ -76,16 +84,18 @@ function Cashier() {
           <span>Amount · FELT</span>
           <input value={amount} inputMode="decimal" onChange={(event) => setAmount(event.target.value)} />
         </label>
-        <button type="button" className="action-button" disabled={busy} onClick={() => void run(() => {
-          if (!live) { send({ type: "deposit", amount: parseFelt(amount) }); return; }
-          return depositFelt(parseFelt(amount));
+        <button type="button" className="action-button" disabled={busy} onClick={() => void run(async () => {
+          if (!live) throw new Error("Connect a Cronos wallet.");
+          await depositFelt(parseFelt(amount));
+          await refresh();
         })}>Deposit</button>
-        <button type="button" className="action-button" disabled={busy} onClick={() => void run(() => {
-          if (!live) { send({ type: "withdraw", amount: parseFelt(amount) }); return; }
-          return withdrawFelt(parseFelt(amount));
+        <button type="button" className="action-button" disabled={busy} onClick={() => void run(async () => {
+          if (!live) throw new Error("Connect a Cronos wallet.");
+          await withdrawFelt(parseFelt(amount));
+          await refresh();
         })}>Withdraw</button>
       </div>
-      {live ? <button type="button" className="action-button action-primary cashier-claim" disabled={busy} onClick={() => void run(() => claimDrip())}>Claim 10,000</button> : null}
+      {live ? <button type="button" className="action-button action-primary cashier-claim" disabled={busy} onClick={() => void run(async () => { await claimDrip(); await refresh(); })}>Claim 10,000</button> : null}
       {note ? <p className="inline-error">{note}</p> : null}
     </section>
   );

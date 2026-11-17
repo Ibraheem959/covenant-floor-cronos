@@ -74,17 +74,14 @@ function Shell() {
   const [page, setPage] = useState<PageId>("lottery");
   const [open, setOpen] = useState(false);
   const [walletNote, setWalletNote] = useState("");
-  const seat = state.seats[state.acting];
   const copy = COPY[page];
-  const onChain = Boolean(state.address && state.chainOk);
-  const shownVault = onChain ? (state.chainVault ?? 0n) : seat.vault;
+  const shownVault = state.address ? state.chainVault : 0n;
 
   useEffect(() => {
     if (state.contract !== FLOOR) send({ type: "contract", address: FLOOR });
   }, [send, state.contract]);
 
   useEffect(() => {
-    if (!onChain || !state.address) return;
     let stop = false;
     const pull = () => {
       void chainBalances(state.address).then((row) => {
@@ -97,7 +94,7 @@ function Shell() {
       stop = true;
       window.clearInterval(timer);
     };
-  }, [onChain, send, state.address]);
+  }, [send, state.address]);
 
   async function connect() {
     setWalletNote("");
@@ -135,10 +132,10 @@ function Shell() {
     }
   }
 
-  const bank = onChain ? (state.chainBank ?? 0n) : state.bank;
-  const burned = onChain ? (state.chainBurned ?? 0n) : state.burned;
-  const buyback = onChain ? (state.chainBuyback ?? 0n) : state.buyback;
-  const stakers = onChain ? (state.chainStakers ?? 0n) : state.stakers;
+  const bank = state.chainBank;
+  const burned = state.chainBurned;
+  const buyback = state.chainBuyback;
+  const stakers = state.chainStakers;
 
   return (
     <PickPage.Provider value={(id) => { const hit = NAV.find(([page]) => page === id); if (hit) setPage(hit[0]); }}>
@@ -397,36 +394,31 @@ function RacePage() {
 }
 
 function WalletPage() {
-  const { state, go, run, busy, local, refresh } = useForm();
+  const { state, run, busy, local, refresh } = useForm();
   const [amount, setAmount] = useState("1000");
-  const seat = state.seats[state.acting];
   const live = Boolean(state.address && state.chainOk);
   return (
     <div className="grid gap-4">
       <div className="grid gap-3 sm:grid-cols-3">
-        <Stat label="Wallet" value={`${formatFelt(live ? (state.chainWallet ?? 0n) : seat.wallet)} FELT`} />
-        <Stat label="Vault" value={`${formatFelt(live ? (state.chainVault ?? 0n) : seat.vault)} FELT`} />
-        <Stat label="CRO" value={live ? "—" : seat.cro.toString()} />
+        <Stat label="Wallet" value={`${formatFelt(state.address ? state.chainWallet : 0n)} FELT`} />
+        <Stat label="Vault" value={`${formatFelt(state.address ? state.chainVault : 0n)} FELT`} />
+        <Stat label="CRO" value="—" />
       </div>
       <Field label="Amount · FELT" value={amount} onChange={setAmount} />
       <div className="flex flex-wrap gap-2">
         {live ? <Go disabled={busy} onClick={() => void run(async () => { await claimDrip(); await refresh(); })}>Claim 10,000 FELT</Go> : null}
-        <Go disabled={busy} onClick={() => {
-          if (!live) {
-            go(() => ({ type: "deposit", amount: parseFelt(amount) }));
-            return;
-          }
-          void run(async () => { await depositFelt(parseFelt(amount)); await refresh(); });
-        }}>Deposit to vault</Go>
-        <Go quiet disabled={busy} onClick={() => {
-          if (!live) {
-            go(() => ({ type: "withdraw", amount: parseFelt(amount) }));
-            return;
-          }
-          void run(async () => { await withdrawFelt(parseFelt(amount)); await refresh(); });
-        }}>Withdraw</Go>
+        <Go disabled={busy} onClick={() => void run(async () => {
+          if (!live) throw new Error("Connect a Cronos wallet.");
+          await depositFelt(parseFelt(amount));
+          await refresh();
+        })}>Deposit to vault</Go>
+        <Go quiet disabled={busy} onClick={() => void run(async () => {
+          if (!live) throw new Error("Connect a Cronos wallet.");
+          await withdrawFelt(parseFelt(amount));
+          await refresh();
+        })}>Withdraw</Go>
       </div>
-      <p className="text-sm text-muted">House bank {formatFelt(live ? (state.chainBank ?? 0n) : state.bank)} FELT. Burned {formatFelt(live ? (state.chainBurned ?? 0n) : state.burned)}. Buyback {formatFelt(live ? (state.chainBuyback ?? 0n) : state.buyback)}. Set aside for stakers {formatFelt(live ? (state.chainStakers ?? 0n) : state.stakers)}.</p>
+      <p className="text-sm text-muted">House bank {formatFelt(state.chainBank)} FELT. Burned {formatFelt(state.chainBurned)}. Buyback {formatFelt(state.chainBuyback)}. Set aside for stakers {formatFelt(state.chainStakers)}.</p>
       {live ? <p className="text-sm text-muted">Claim is once per wallet.</p> : null}
       <Bomb text={local} />
     </div>
@@ -515,13 +507,12 @@ function HousePage() {
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("1000");
   const who = Number(owner) as 0 | 1 | 2;
-  const live = Boolean(state.chainOk);
   return (
     <div className="grid gap-4">
       <div className="grid gap-3 sm:grid-cols-3">
-        <Stat label="House bank" value={`${formatFelt(live ? (state.chainBank ?? 0n) : state.bank)} FELT`} />
-        <Stat label="Staker pot" value={`${formatFelt(live ? (state.chainStakers ?? 0n) : state.stakers)} FELT`} />
-        <Stat label="Burned" value={`${formatFelt(live ? (state.chainBurned ?? 0n) : state.burned)} FELT`} />
+        <Stat label="House bank" value={`${formatFelt(state.chainBank)} FELT`} />
+        <Stat label="Staker pot" value={`${formatFelt(state.chainStakers)} FELT`} />
+        <Stat label="Burned" value={`${formatFelt(state.chainBurned)} FELT`} />
       </div>
       <p className="text-sm text-muted">A withdrawal needs two of the three owners, and it comes out of the house bank only.</p>
       <Picks value={owner} onChange={setOwner} options={[{ id: "0", label: "Owner 1" }, { id: "1", label: "Owner 2" }, { id: "2", label: "Owner 3" }]} />

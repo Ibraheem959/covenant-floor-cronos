@@ -1,5 +1,7 @@
-import { BrowserProvider, Contract, MaxUint256, type TransactionReceipt } from "ethers";
+import { BrowserProvider, Contract, JsonRpcProvider, MaxUint256, type TransactionReceipt } from "ethers";
 import { FELT, FLOOR } from "@/lib/cronos/addresses";
+
+const RPC = "https://evm.cronos.org";
 
 const feltAbi = [
   "function balanceOf(address) view returns (uint256)",
@@ -49,13 +51,18 @@ async function sent(tx: Promise<{ wait: () => Promise<TransactionReceipt | null>
   return receipt;
 }
 
-export async function chainBalances(address: string) {
-  const provider = new BrowserProvider(ethereum());
+function reader() {
+  return new JsonRpcProvider(RPC, 25, { staticNetwork: true });
+}
+
+export async function chainBalances(address = "") {
+  const provider = reader();
   const felt = new Contract(FELT, feltAbi, provider);
   const floor = new Contract(FLOOR, floorAbi, provider);
+  const who = /^0x[0-9a-fA-F]{40}$/.test(address) ? address : "";
   const [wallet, vault, bank, burned, buyback, stakers] = await Promise.all([
-    felt.balanceOf(address) as Promise<bigint>,
-    floor.vault(address) as Promise<bigint>,
+    who ? (felt.balanceOf(who) as Promise<bigint>) : 0n,
+    who ? (floor.vault(who) as Promise<bigint>) : 0n,
     floor.bank() as Promise<bigint>,
     floor.burned() as Promise<bigint>,
     floor.buybackPot() as Promise<bigint>,

@@ -274,7 +274,7 @@ function bytes(text: string): number {
 }
 
 function emptySeat(wallet: bigint, vault: bigint): Seat {
-  return { wallet, vault, cro: 10_000n, lock: null, faith: 0n, pilgrims: [], tithe: null };
+  return { wallet, vault, cro: 0n, lock: null, faith: 0n, pilgrims: [], tithe: null };
 }
 
 function emptyTable(): Table {
@@ -291,9 +291,9 @@ function emptyTable(): Table {
 
 export function initialState(): State {
   return {
-    seats: [emptySeat(25_000_000n * UNIT, 5_000_000n * UNIT), emptySeat(25_000_000n * UNIT, 5_000_000n * UNIT)],
+    seats: [emptySeat(0n, 0n), emptySeat(0n, 0n)],
     acting: 0,
-    bank: 80_000_000n * UNIT,
+    bank: 0n,
     burned: 0n,
     buyback: 0n,
     stakers: 0n,
