@@ -111,7 +111,7 @@ export async function playOnChain(kind: "dice" | "roulette" | "slots" | "plinko"
   const open = await sent(floor[kind](...args));
   for (let i = 0; i < 40; i++) {
     if ((await provider.getBlockNumber()) > open.blockNumber) break;
-    if (i === 39) throw new Error("The next Cronos block did not arrive. Settle again in a moment.");
+    if (i === 39) throw new Error("Wait a moment and roll again.");
     await new Promise((resolve) => setTimeout(resolve, 1500));
   }
   const settle =

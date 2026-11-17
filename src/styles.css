@@ -1,15 +1,15 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #0b0c12;
-  --color-stone: #0e1016;
-  --color-panel: #14161e;
-  --color-line: #2a2d38;
-  --color-parchment: #f3efe4;
-  --color-muted: #9498a8;
-  --color-gold: #f5c431;
-  --color-gold-deep: #a88410;
-  --color-wine: #d15a52;
+  --color-ink: #080e0c;
+  --color-stone: #0c1511;
+  --color-panel: #101a15;
+  --color-line: #24302a;
+  --color-parchment: #f0f4e9;
+  --color-muted: #95a99c;
+  --color-gold: #c5ff66;
+  --color-gold-deep: #7ea84a;
+  --color-wine: #e06a62;
   --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
   --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "DM Mono", ui-monospace, monospace;
@@ -49,11 +49,100 @@
 }
 
 @layer components {
-  .felt {
+  .felt,
+  .app-frame {
     background:
-      radial-gradient(80% 40% at 100% 0%, rgb(245 196 49 / 0.06), transparent 42%),
-      var(--color-ink);
+      radial-gradient(ellipse at 64% -18%, rgb(123 177 71 / 0.14), transparent 45%),
+      linear-gradient(180deg, #080e0c 0%, #080b0a 42%, #090d0b 100%);
+    color: var(--color-parchment);
   }
+
+  .app-sidebar {
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    background: rgb(8 14 12 / 0.96);
+  }
+
+  .app-header {
+    background: rgb(8 14 12 / 0.88);
+  }
+
+  .wallet-button {
+    display: inline-flex;
+    min-height: 42px;
+    align-items: center;
+    gap: 8px;
+    border: 0;
+    border-radius: 999px;
+    padding: 0 16px;
+    background: var(--color-gold);
+    color: var(--color-ink);
+    font-size: 13px;
+    font-weight: 800;
+    box-shadow: 0 6px 24px rgb(173 255 91 / 0.12);
+  }
+
+  .page-heading h1 {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: clamp(38px, 5vw, 62px);
+    font-weight: 800;
+    letter-spacing: -0.065em;
+    line-height: 0.95;
+  }
+
+  .page-heading p {
+    max-width: 36rem;
+    margin-top: 8px;
+    color: var(--color-muted);
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
+  .heading-mark {
+    position: relative;
+    display: grid;
+    width: 68px;
+    height: 68px;
+    flex: none;
+    place-items: center;
+    border: 1px solid rgb(197 255 102 / 0.25);
+    border-radius: 999px;
+    color: var(--color-gold);
+    font-family: var(--font-sans);
+    font-size: 25px;
+    font-weight: 700;
+  }
+
+  .heading-mark i {
+    position: absolute;
+    top: 10px;
+    right: 2px;
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--color-gold);
+  }
+
+  .right-rail {
+    border: 1px solid var(--color-line);
+    border-radius: 16px;
+    background: rgb(16 26 21 / 0.76);
+  }
+
+  .split-bar {
+    display: flex;
+    height: 5px;
+    gap: 2px;
+    overflow: hidden;
+    border-radius: 99px;
+  }
+
+  .split-bar span:nth-child(1) { width: 15%; background: #bb7770; }
+  .split-bar span:nth-child(2) { width: 5%; background: #d8b65f; }
+  .split-bar span:nth-child(3) { width: 10%; background: #7c9a7b; }
+  .split-bar span:nth-child(4) { width: 70%; background: #3d7461; }
 
   .brand {
     display: flex;
@@ -66,25 +155,25 @@
     width: 2.4rem;
     height: 2.4rem;
     place-items: center;
-    border: 1px solid rgb(245 196 49 / 0.62);
-    border-radius: 0.75rem 0.75rem 0.75rem 0.25rem;
+    border: 1px solid rgb(197 255 102 / 0.55);
+    border-radius: 13px;
     color: var(--color-gold);
-    background: linear-gradient(145deg, rgb(245 196 49 / 0.13), transparent 75%);
-    font-family: var(--font-display);
-    font-size: 1.3rem;
-    font-weight: 700;
+    background: linear-gradient(140deg, rgb(197 255 102 / 0.18), rgb(53 117 79 / 0.08));
+    font-family: var(--font-sans);
+    font-size: 1.15rem;
+    font-weight: 800;
   }
 
   .brand strong {
     display: block;
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.11em;
+    color: #f3f2e7;
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
   }
 
   .brand strong span {
-    margin-left: 0.3rem;
-    color: var(--color-gold);
+    display: none;
   }
 
   .brand small {
@@ -111,9 +200,9 @@
   }
 
   .nav-link-active {
-    border-color: rgb(245 196 49 / 0.22);
-    background: rgb(245 196 49 / 0.09);
-    color: var(--color-gold);
+    border-color: rgb(197 255 102 / 0.17);
+    background: rgb(197 255 102 / 0.09);
+    color: #d3ff8e;
   }
 
   .nav-index {

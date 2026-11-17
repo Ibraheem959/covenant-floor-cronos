@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 import { Menu, Wallet, X } from "lucide-react";
-import { Area, Cards, Field, Go, PageHead, Picks, Stage, Stat } from "@/components/cronos/bits";
+import { Area, Cards, Field, Go, Picks, Stage, Stat } from "@/components/cronos/bits";
 import { FloorProvider, useFloor } from "@/lib/cronos/store";
-import { FELT, FLOOR } from "@/lib/cronos/addresses";
+import { FLOOR } from "@/lib/cronos/addresses";
 import { chainBalances, claimDrip, depositFelt, playOnChain, withdrawFelt } from "@/lib/cronos/chain";
 import {
   FAITH_MIN,
-  SEAT_ADDR,
   formatFelt,
   handName,
   owedOf,
@@ -107,7 +106,7 @@ function Shell() {
     setWalletNote("");
     const eth = (window as Window & { ethereum?: Eth }).ethereum;
     if (!eth) {
-      setWalletNote("No Cronos wallet is available in this browser. The two seats still play.");
+      setWalletNote("No Cronos wallet in this browser.");
       return;
     }
     try {
@@ -133,59 +132,99 @@ function Shell() {
       const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
       const chain = (await eth.request({ method: "eth_chainId" })) as string;
       send({ type: "wallet", address: accounts[0] ?? "", chainOk: chain.toLowerCase() === "0x19" });
-      setWalletNote(chain.toLowerCase() === "0x19" ? "Connected on Cronos. Claim 10,000 FELT on the wallet page. Gas is CRO." : "This wallet is not on Cronos.");
+      setWalletNote(chain.toLowerCase() === "0x19" ? "Connected." : "Switch the wallet to Cronos.");
     } catch (error) {
       setWalletNote(error instanceof Error ? error.message : "The wallet did not connect.");
     }
   }
 
+  const bank = onChain ? (state.chainBank ?? 0n) : state.bank;
+  const burned = onChain ? (state.chainBurned ?? 0n) : state.burned;
+  const buyback = onChain ? (state.chainBuyback ?? 0n) : state.buyback;
+  const stakers = onChain ? (state.chainStakers ?? 0n) : state.stakers;
+
   return (
-    <main className="felt min-h-screen">
-      <div className="mx-auto grid max-w-6xl gap-5 px-4 py-5 lg:grid-cols-[14rem_minmax(0,1fr)] lg:px-6">
-        <aside className="hidden lg:grid lg:content-start lg:gap-4">
+    <div className="app-noise app-frame min-h-[100dvh]">
+      <div className="flex min-h-[100dvh]">
+        <aside className="app-sidebar hidden w-[224px] shrink-0 flex-col border-r border-line px-4 py-5 lg:flex">
           <Brand />
+          <div className="mt-8 px-3 text-[10px] font-extrabold tracking-[.22em] text-muted uppercase">Play</div>
           <Nav page={page} onPick={setPage} />
+          <p className="mt-auto border-t border-line px-3 pt-4 text-xs text-muted">Cronos · chain 25</p>
         </aside>
-        <div className="grid gap-5">
-          <header className="flex flex-wrap items-end justify-between gap-4 border-b border-line pb-4">
-            <div className="grid gap-1 lg:hidden">
-              <Brand />
-            </div>
-            <div className="ml-auto grid justify-items-end gap-2">
-              <p className="text-xs tracking-wide text-muted uppercase">{onChain ? "Vault · Cronos" : `Vault · Seat ${state.acting === 0 ? "A" : "B"}`}</p>
-              <p className="num-strip font-display text-4xl text-gold" data-testid="chip-balance">
-                {formatFelt(shownVault)}
-              </p>
-              <div className="flex flex-wrap justify-end gap-2">
-                <button type="button" onClick={() => send({ type: "act", seat: state.acting === 0 ? 1 : 0 })} className="min-h-11 rounded-full border border-line px-4 text-sm">
-                  Switch to seat {state.acting === 0 ? "B" : "A"}
-                </button>
-                <button type="button" onClick={() => void connect()} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-gold px-4 text-sm font-medium text-ink">
-                  <Wallet size={16} aria-hidden />
-                  {state.address ? short(state.address) : "Cronos wallet"}
-                </button>
-                <button type="button" className="icon-button grid min-h-11 min-w-11 place-items-center rounded-full border border-line lg:hidden" aria-label="Open navigation" onClick={() => setOpen((v) => !v)}>
-                  {open ? <X size={18} /> : <Menu size={18} />}
-                </button>
+        <main className="min-w-0 flex-1">
+          <header className="app-header sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-line px-4 backdrop-blur-xl sm:px-7">
+            <div className="flex min-w-0 items-center gap-3">
+              <button type="button" className="icon-button grid place-items-center lg:hidden" aria-label="Open navigation" onClick={() => setOpen((v) => !v)}>
+                {open ? <X size={18} /> : <Menu size={18} />}
+              </button>
+              <div className="lg:hidden"><Brand compact /></div>
+              <div className="hidden items-center gap-2 text-[11px] tracking-[.08em] text-muted sm:flex">
+                <span className="h-1.5 w-1.5 rounded-full bg-gold" />
+                CRONOS <span className="opacity-40">/</span> CHAIN 25
               </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => send({ type: "act", seat: state.acting === 0 ? 1 : 0 })} className="hidden min-h-11 rounded-full border border-line px-4 text-sm sm:inline">
+                Seat {state.acting === 0 ? "A" : "B"}
+              </button>
+              <button type="button" onClick={() => void connect()} className="wallet-button">
+                <Wallet size={15} aria-hidden />
+                <span>{state.address ? short(state.address) : "Connect wallet"}</span>
+              </button>
             </div>
           </header>
           {open ? (
-            <div className="lg:hidden">
+            <div className="border-b border-line p-3 lg:hidden">
               <Nav page={page} onPick={(id) => { setPage(id); setOpen(false); }} />
             </div>
           ) : null}
-          <section className="grid gap-5">
-            <PageHead {...copy} />
-            {state.error ? <p className="rounded-lg border border-wine px-3 py-3 text-sm text-wine">{state.error}</p> : null}
-            {walletNote ? <p className="text-sm text-muted">{walletNote}</p> : null}
-            {state.chainOk ? <p className="text-xs tracking-wide text-gold uppercase">Cronos · chain 25</p> : null}
-            <Body page={page} />
-            {page !== "house" && state.last.game === page ? <Stage title={state.last.title} line={state.last.line} tone={state.last.tone} /> : null}
-          </section>
-        </div>
+          <div className="mx-auto grid max-w-[1480px] items-start gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_280px] lg:px-8">
+            <section className="grid min-w-0 gap-4">
+              <p className="text-[11px] font-bold tracking-[.21em] text-muted uppercase">{copy.eyebrow}</p>
+              <div className="page-heading flex items-center justify-between gap-4">
+                <div>
+                  <h1>{copy.title}</h1>
+                  <p>{copy.copy}</p>
+                </div>
+                <div className="heading-mark hidden sm:grid">F<i /></div>
+              </div>
+              <div className="flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-line bg-panel/70 px-4 py-3">
+                <div>
+                  <p className="text-[10px] tracking-[.14em] text-muted uppercase">Vault</p>
+                  <p className="num-strip text-3xl text-gold" data-testid="chip-balance">{formatFelt(shownVault)}</p>
+                </div>
+              </div>
+              {state.error ? <p className="rounded-lg border border-wine px-3 py-3 text-sm text-wine">{state.error}</p> : null}
+              {walletNote ? <p className="text-sm text-muted">{walletNote}</p> : null}
+              <Body page={page} />
+              {page !== "house" && state.last.game === page ? <Stage title={state.last.title} line={state.last.line} tone={state.last.tone} /> : null}
+            </section>
+            <aside className="right-rail overflow-hidden">
+              <div className="flex items-center justify-between px-4 pt-4">
+                <div>
+                  <p className="text-[9px] tracking-[.16em] text-muted uppercase">House</p>
+                  <h2 className="font-display text-xl">Floor</h2>
+                </div>
+                <span className="rounded-full border border-line px-2 py-1 text-[9px] text-gold">LIVE</span>
+              </div>
+              <div className="mt-3 border-t border-line">
+                <RailRow label="Floor bank" value={`${formatFelt(bank)} FELT`} hot />
+                <RailRow label="Your vault" value={`${formatFelt(shownVault)} FELT`} />
+                <RailRow label="Burned" value={`${formatFelt(burned)} FELT`} />
+                <RailRow label="Buyback" value={`${formatFelt(buyback)} FELT`} />
+                <RailRow label="Stakers" value={`${formatFelt(stakers)} FELT`} />
+              </div>
+              <div className="border-t border-line px-4 py-4">
+                <p className="text-xs font-semibold">Net loss allocation</p>
+                <div className="split-bar my-3"><span /><span /><span /><span /></div>
+                <p className="text-[11px] leading-relaxed text-muted">15% burned · 5% buyback · 10% stakers · 70% stays in the house.</p>
+              </div>
+            </aside>
+          </div>
+        </main>
       </div>
-    </main>
+    </div>
   );
 }
 
@@ -193,15 +232,13 @@ type Eth = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
 };
 
-function Brand() {
+function Brand({ compact = false }: { compact?: boolean }) {
   return (
-    <div className="brand">
-      <div className="brand-emblem">C</div>
+    <div className={`brand ${compact ? "gap-2" : ""}`}>
+      <div className="brand-emblem">F</div>
       <div>
-        <strong>
-          COVENANT<span>FLOOR</span>
-        </strong>
-        <small>CRONOS · FELT</small>
+        <strong>FELT</strong>
+        <small>FAIR ENTRY · LOCKED TOGETHER</small>
       </div>
     </div>
   );
@@ -209,14 +246,24 @@ function Brand() {
 
 function Nav({ page, onPick }: { page: PageId; onPick: (id: PageId) => void }) {
   return (
-    <nav className="grid grid-cols-2 gap-1 lg:grid-cols-1">
+    <nav className="mt-3 grid grid-cols-2 gap-1 lg:grid-cols-1">
       {NAV.map(([id, label], index) => (
         <button key={id} type="button" onClick={() => onPick(id)} className={`nav-link ${page === id ? "nav-link-active" : ""}`}>
           <span className="nav-index">{String(index + 1).padStart(2, "0")}</span>
           <span>{label}</span>
+          {page === id ? <span className="ml-auto h-1.5 w-1.5 rounded-full bg-gold" /> : null}
         </button>
       ))}
     </nav>
+  );
+}
+
+function RailRow({ label, value, hot }: { label: string; value: string; hot?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5 text-xs">
+      <span className="text-muted">{label}</span>
+      <strong className={hot ? "text-gold" : "font-normal"}>{value}</strong>
+    </div>
   );
 }
 
@@ -314,7 +361,6 @@ function DicePage() {
       {mode === "3" ? <Field label="Exact sum" value={target} onChange={setTarget} hint="2 to 12." /> : null}
       <Field label="Wager · FELT" value={stake} onChange={setStake} hint="1 to 500,000." />
       <Bomb text={local} />
-      {live ? <p className="text-sm text-muted">This roll locks on Cronos, then the next block pays it. The wallet will ask twice.</p> : null}
       <Go testId="button-dice" disabled={busy} onClick={() => {
         if (!live) {
           go(() => ({ type: "dice", mode: Number(mode), target: Number(target), stake: parseFelt(stake) }));
@@ -697,7 +743,7 @@ function DeskPage() {
       <Field label="Pay · FELT" value={pay} onChange={setPay} hint="From this seat's vault. Minimum 1." />
       <Go onClick={() => go(() => ({ type: "job-open", brief, hours: Number(hours), pay: parseFelt(pay) }))}>Post the job</Go>
       <Area label="Work" value={work} onChange={setWork} hint="The other seat submits. 240 bytes." />
-      <Field label="Rejection reason" value={reason} onChange={setReason} hint="Required to send the FELT back. 120 bytes." />
+      <Field label="Rejection reason" value={reason} onChange={setReason} hint="Required to send the FELT back." />
       <Bomb text={local} />
       <ul className="grid gap-3">
         {state.jobs.length === 0 ? <li className="text-sm text-muted">No jobs yet.</li> : null}
@@ -752,9 +798,8 @@ function RacePage() {
 }
 
 function WalletPage() {
-  const { state, send, go, run, busy, local, refresh } = useForm();
+  const { state, go, run, busy, local, refresh } = useForm();
   const [amount, setAmount] = useState("1000");
-  const [arm, setArm] = useState(false);
   const seat = state.seats[state.acting];
   const live = Boolean(state.address && state.chainOk);
   return (
@@ -762,7 +807,7 @@ function WalletPage() {
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="Wallet" value={`${formatFelt(live ? (state.chainWallet ?? 0n) : seat.wallet)} FELT`} />
         <Stat label="Vault" value={`${formatFelt(live ? (state.chainVault ?? 0n) : seat.vault)} FELT`} />
-        <Stat label="CRO" value={live ? "gas" : seat.cro.toString()} />
+        <Stat label="CRO" value={live ? "—" : seat.cro.toString()} />
       </div>
       <Field label="Amount · FELT" value={amount} onChange={setAmount} />
       <div className="flex flex-wrap gap-2">
@@ -783,8 +828,7 @@ function WalletPage() {
         }}>Withdraw</Go>
       </div>
       <p className="text-sm text-muted">House bank {formatFelt(live ? (state.chainBank ?? 0n) : state.bank)} FELT. Burned {formatFelt(live ? (state.chainBurned ?? 0n) : state.burned)}. Buyback {formatFelt(live ? (state.chainBuyback ?? 0n) : state.buyback)}. Set aside for stakers {formatFelt(live ? (state.chainStakers ?? 0n) : state.stakers)}.</p>
-      <p className="text-sm text-muted">FELT {FELT}. Each wallet can claim 10,000 FELT once. CRO only pays gas.</p>
-      {arm ? <Go quiet onClick={() => send({ type: "reset" })}>Confirm reset of both practice seats</Go> : <Go quiet onClick={() => setArm(true)}>Reset practice seats</Go>}
+      {live ? <p className="text-sm text-muted">Claim is once per wallet.</p> : null}
       <Bomb text={local} />
     </div>
   );
@@ -869,23 +913,20 @@ function PilgrimPage() {
 function HousePage() {
   const { state, send, go, local } = useForm();
   const [owner, setOwner] = useState("0");
-  const [to, setTo] = useState<string>(SEAT_ADDR[0]);
+  const [to, setTo] = useState("");
   const [amount, setAmount] = useState("1000");
-  const [contract, setContract] = useState(state.contract);
   const who = Number(owner) as 0 | 1 | 2;
+  const live = Boolean(state.chainOk);
   return (
     <div className="grid gap-4">
       <div className="grid gap-3 sm:grid-cols-3">
-        <Stat label="House bank" value={`${formatFelt(state.bank)} FELT`} />
-        <Stat label="Staker pot" value={`${formatFelt(state.stakers)} FELT`} />
-        <Stat label="Burned" value={`${formatFelt(state.burned)} FELT`} />
+        <Stat label="House bank" value={`${formatFelt(live ? (state.chainBank ?? 0n) : state.bank)} FELT`} />
+        <Stat label="Staker pot" value={`${formatFelt(live ? (state.chainStakers ?? 0n) : state.stakers)} FELT`} />
+        <Stat label="Burned" value={`${formatFelt(live ? (state.chainBurned ?? 0n) : state.burned)} FELT`} />
       </div>
-      <p className="text-sm text-muted">Of a net loss, 15% is burned, 5% is buyback, 10% is set aside for stakers, and 70% stays in the house. Buyback is {formatFelt(state.chainOk ? (state.chainBuyback ?? 0n) : state.buyback)} FELT.</p>
-      <p className="text-sm text-muted">House {FLOOR}. FELT {FELT}. Dice, roulette, slots, and plinko settle on that contract when the Cronos wallet is connected. The other tables still use the practice seats.</p>
-      <Field label="Published contract" value={contract} onChange={setContract} hint="Paste the Cronos address after you publish." />
-      <Go quiet onClick={() => send({ type: "contract", address: contract })}>Save contract</Go>
+      <p className="text-sm text-muted">A withdrawal needs two of the three owners, and it comes out of the house bank only.</p>
       <Picks value={owner} onChange={setOwner} options={[{ id: "0", label: "Owner 1" }, { id: "1", label: "Owner 2" }, { id: "2", label: "Owner 3" }]} />
-      <Field label="Destination" value={to} onChange={setTo} hint={`Seat A ${SEAT_ADDR[0]} · Seat B ${SEAT_ADDR[1]}`} />
+      <Field label="Destination" value={to} onChange={setTo} />
       <Field label="Amount · FELT" value={amount} onChange={setAmount} />
       <div className="flex flex-wrap gap-2">
         <Go onClick={() => go(() => ({ type: "house-propose", owner: who, to, amount: parseFelt(amount) }))}>Propose</Go>
@@ -895,7 +936,6 @@ function HousePage() {
       </div>
       {state.proposal ? <p className="text-sm">Waiting: {formatFelt(state.proposal.amount)} FELT to {short(state.proposal.to)}. Signatures {state.proposal.sigs.map((on) => (on ? "yes" : "no")).join(" · ")}.</p> : <p className="text-sm text-muted">No withdrawal is waiting.</p>}
       <Bomb text={local} />
-      <p className="text-xs text-muted">A 5,000 ante and a 10,000 call return 30,000 when the player wins with a pair the house qualifies under. Profit is 15,000.</p>
     </div>
   );
 }
