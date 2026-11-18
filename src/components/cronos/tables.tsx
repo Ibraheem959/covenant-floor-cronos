@@ -26,20 +26,16 @@ function usePlay() {
   const live = CHAIN && Boolean(api.state.address && api.state.chainOk);
 
   async function play(action: () => Action, chain?: () => Promise<void>, wait = 780) {
+    void action;
+    void wait;
     try {
       setLocal("");
       setBusy(true);
-      if (chain) {
-        if (!live) throw new Error("Connect a Cronos wallet.");
-        await chain();
-        const row = await chainBalances(api.state.address);
-        api.send({ type: "synced", wallet: row.wallet, vault: row.vault, bank: row.bank, burned: row.burned, buyback: row.buyback, stakers: row.stakers, cro: row.cro });
-      } else if (live) {
-        throw new Error("This table is not on the Cronos contract yet.");
-      } else {
-        await new Promise((resolve) => window.setTimeout(resolve, wait));
-        api.send(action());
-      }
+      if (!live) throw new Error("Connect a Cronos wallet.");
+      if (!chain) throw new Error("This table is not open on Cronos yet.");
+      await chain();
+      const row = await chainBalances(api.state.address);
+      api.send({ type: "synced", wallet: row.wallet, vault: row.vault, bank: row.bank, burned: row.burned, buyback: row.buyback, stakers: row.stakers, cro: row.cro });
     } catch (error) {
       setLocal(error instanceof Error ? error.message : "That play did not settle.");
     } finally {
@@ -79,7 +75,7 @@ function Cashier() {
       <div className="cashier-balance">
         <span className="eyebrow">PLAYER VAULT</span>
         <strong>{formatFelt(vault)} FELT</strong>
-        <small>Wagers come out of this balance.</small>
+        <small>{vault > 0n ? "Wagers come out of this FELT." : "Empty. Deposit FELT before a wager. Nothing is paid from an empty vault."}</small>
       </div>
       <div className="cashier-actions">
         <label className="field">
@@ -105,7 +101,7 @@ function Cashier() {
 
 function Play({ page, title, busy, stage, children }: { page: string; title: string; busy: boolean; stage: ReactNode; children: ReactNode }) {
   const { state } = useFloor();
-  const last = state.last.game === page ? state.last : null;
+  const last = state.address && state.chainOk && state.last.game === page ? state.last : null;
   const tone = last?.tone === "win" ? "win" : last?.tone === "loss" ? "loss" : "push";
   return (
     <div className="grid gap-4">
@@ -438,11 +434,11 @@ export function DuelPage() {
       {p && p.phase >= 2 ? (
         p.toAct === me ? (
           <>
-            <Move label="Check" busy={play.busy} onSubmit={() => play.send({ type: "pvp-check" })} />
-            <Move label="Call" busy={play.busy} onSubmit={() => play.send({ type: "pvp-call" })} />
-            <Move label="All-in" busy={play.busy} onSubmit={() => play.send({ type: "pvp-allin" })} />
-            <Move label="Fold" busy={play.busy} onSubmit={() => play.send({ type: "pvp-fold" })} />
-            <Move label="Raise" busy={play.busy} onSubmit={() => play.send({ type: "pvp-raise", extra: parseFelt(extra) })}>
+            <Move label="Check" busy={play.busy} onSubmit={() => void play.play(() => ({ type: "pvp-check" }))} />
+            <Move label="Call" busy={play.busy} onSubmit={() => void play.play(() => ({ type: "pvp-call" }))} />
+            <Move label="All-in" busy={play.busy} onSubmit={() => void play.play(() => ({ type: "pvp-allin" }))} />
+            <Move label="Fold" busy={play.busy} onSubmit={() => void play.play(() => ({ type: "pvp-fold" }))} />
+            <Move label="Raise" busy={play.busy} onSubmit={() => void play.play(() => ({ type: "pvp-raise", extra: parseFelt(extra) }))}>
               <Amount label="Raise extra · FELT" value={extra} onChange={setExtra} />
               <Fault text={play.local} />
             </Move>
@@ -454,8 +450,8 @@ export function DuelPage() {
             <Amount label="Buy-in · whole FELT" value={buy} onChange={setBuy} hint="20 to 50,000. You are the small blind." />
             <Fault text={play.local} />
           </Move>
-          <Move label="Sit and deal" busy={play.busy} onSubmit={() => play.send({ type: "pvp-join" })} />
-          <Move label="Leave" busy={play.busy} onSubmit={() => play.send({ type: "pvp-leave" })} />
+          <Move label="Sit and deal" busy={play.busy} onSubmit={() => void play.play(() => ({ type: "pvp-join" }))} />
+          <Move label="Leave" busy={play.busy} onSubmit={() => void play.play(() => ({ type: "pvp-leave" }))} />
         </>
       )}
     </Play>
@@ -482,9 +478,9 @@ export function TablePage() {
     }>
       {t.phase === 2 ? (
         <>
-          <Move label="Hit" onSubmit={() => play.send({ type: "table-hit" })} />
-          <Move label="Stand" onSubmit={() => play.send({ type: "table-stand" })} />
-          <Move label="Double" onSubmit={() => play.send({ type: "table-double" })} />
+          <Move label="Hit" busy={play.busy} onSubmit={() => void play.play(() => ({ type: "table-hit" }))} />
+          <Move label="Stand" busy={play.busy} onSubmit={() => void play.play(() => ({ type: "table-stand" }))} />
+          <Move label="Double" busy={play.busy} onSubmit={() => void play.play(() => ({ type: "table-double" }))} />
         </>
       ) : (
         <>
@@ -496,7 +492,7 @@ export function TablePage() {
             <Amount label="Even wager · FELT" value={stake} onChange={setStake} />
             <Fault text={play.local} />
           </Move>
-          <Move label="Leave" onSubmit={() => play.send({ type: "table-leave" })} />
+          <Move label="Leave" busy={play.busy} onSubmit={() => void play.play(() => ({ type: "table-leave" }))} />
         </>
       )}
     </Play>

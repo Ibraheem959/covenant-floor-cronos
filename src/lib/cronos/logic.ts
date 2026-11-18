@@ -298,9 +298,9 @@ function emptyTable(): Table {
 
 export function initialState(): State {
   return {
-    seats: [emptySeat(50_000_000n * UNIT, 10_000_000n * UNIT, 1_000n), emptySeat(50_000_000n * UNIT, 10_000_000n * UNIT, 1_000n)],
+    seats: [emptySeat(0n, 0n), emptySeat(0n, 0n)],
     acting: 0,
-    bank: 20_000_000n * UNIT,
+    bank: 0n,
     burned: 0n,
     buyback: 0n,
     stakers: 0n,
@@ -365,6 +365,12 @@ function apply(s: State, a: Action, now: number) {
     case "wallet":
       s.address = a.address;
       s.chainOk = a.chainOk;
+      if (!a.address) {
+        s.chainWallet = 0n;
+        s.chainVault = 0n;
+        s.chainCro = 0n;
+        s.last = { title: "READY", line: "Connect a Cronos wallet. A wager needs FELT in the vault.", tone: "live", game: "lottery" };
+      }
       return;
     case "contract":
       s.contract = a.address.trim();

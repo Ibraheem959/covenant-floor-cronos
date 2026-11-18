@@ -127,11 +127,35 @@ function Shell() {
       const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
       const chain = (await eth.request({ method: "eth_chainId" })) as string;
       send({ type: "wallet", address: accounts[0] ?? "", chainOk: chain.toLowerCase() === "0x19" });
-      setWalletNote(chain.toLowerCase() === "0x19" ? "Connected." : "Switch the wallet to Cronos.");
+      setWalletNote(chain.toLowerCase() === "0x19" ? "" : "Switch the wallet to Cronos.");
     } catch (error) {
       setWalletNote(error instanceof Error ? error.message : "The wallet did not connect.");
     }
   }
+
+  function disconnect() {
+    send({ type: "wallet", address: "", chainOk: false });
+    setWalletNote("");
+    const eth = (window as Window & { ethereum?: Eth }).ethereum;
+    void eth?.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] }).catch(() => undefined);
+  }
+
+  useEffect(() => {
+    const eth = (window as Window & { ethereum?: Eth & { on?: (event: string, fn: (...args: unknown[]) => void) => void; removeListener?: (event: string, fn: (...args: unknown[]) => void) => void } }).ethereum;
+    if (!eth?.on) return;
+    const onAccounts = (accounts: unknown) => {
+      const list = Array.isArray(accounts) ? accounts.map(String) : [];
+      if (list.length === 0) {
+        send({ type: "wallet", address: "", chainOk: false });
+        return;
+      }
+      void eth.request({ method: "eth_chainId" }).then((chain) => {
+        send({ type: "wallet", address: list[0] ?? "", chainOk: String(chain).toLowerCase() === "0x19" });
+      }).catch(() => undefined);
+    };
+    eth.on("accountsChanged", onAccounts);
+    return () => eth.removeListener?.("accountsChanged", onAccounts);
+  }, [send]);
 
   const bank = state.chainBank;
   const burned = state.chainBurned;
@@ -140,39 +164,46 @@ function Shell() {
 
   return (
     <PickPage.Provider value={(id) => { const hit = NAV.find(([page]) => page === id); if (hit) setPage(hit[0]); }}>
-    <div className="app-noise app-frame min-h-[100dvh]">
-      <div className="flex min-h-[100dvh]">
+    <div className="app-noise app-frame">
+      <div className="floor-shell">
         <aside className="app-sidebar hidden w-[224px] shrink-0 flex-col border-r border-line px-4 py-5 lg:flex">
           <Brand />
-          <div className="mt-8 px-3 text-[10px] font-extrabold tracking-[.22em] text-muted uppercase">Play</div>
+          <div className="mt-6 px-3 text-[10px] font-extrabold tracking-[.22em] text-muted uppercase">Play</div>
           <Nav page={page} onPick={setPage} />
-          <p className="mt-auto border-t border-line px-3 pt-4 text-xs text-muted">Cronos · chain 25</p>
+          <p className="mt-4 border-t border-line px-3 pt-4 text-xs text-muted">Cronos · chain 25 · FELT</p>
         </aside>
-        <main className="min-w-0 flex-1">
-          <header className="app-header sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-line px-4 backdrop-blur-xl sm:px-7">
-            <div className="flex min-w-0 items-center gap-3">
+        <main className="floor-main min-w-0 flex-1">
+          <header className="app-header sticky top-0 z-20 flex h-16 items-center justify-between gap-2 border-b border-line px-3 backdrop-blur-xl sm:px-6">
+            <div className="flex min-w-0 items-center gap-2">
               <button type="button" className="icon-button grid place-items-center lg:hidden" aria-label="Open navigation" onClick={() => setOpen((v) => !v)}>
                 {open ? <X size={18} /> : <Menu size={18} />}
               </button>
               <div className="lg:hidden"><Brand compact /></div>
               <div className="hidden items-center gap-2 text-[11px] tracking-[.08em] text-muted sm:flex">
                 <span className="h-1.5 w-1.5 rounded-full bg-gold" />
-                CRONOS <span className="opacity-40">/</span> CHAIN 25
+                CRONOS
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={() => void connect()} className="wallet-button">
-                <Wallet size={15} aria-hidden />
-                <span>{state.address ? short(state.address) : "Connect wallet"}</span>
-              </button>
+            <div className="flex shrink-0 items-center gap-2">
+              {state.address ? (
+                <>
+                  <span className="hidden font-mono text-xs text-muted sm:inline">{short(state.address)}</span>
+                  <button type="button" onClick={disconnect} className="disconnect-button">Disconnect</button>
+                </>
+              ) : (
+                <button type="button" onClick={() => void connect()} className="wallet-button">
+                  <Wallet size={15} aria-hidden />
+                  <span>Connect wallet</span>
+                </button>
+              )}
             </div>
           </header>
           {open ? (
-            <div className="border-b border-line p-3 lg:hidden">
+            <div className="nav-drawer lg:hidden">
               <Nav page={page} onPick={(id) => { setPage(id); setOpen(false); }} />
             </div>
           ) : null}
-          <div className="mx-auto grid max-w-[1480px] items-start gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_280px] lg:px-8">
+          <div className="floor-body mx-auto w-full max-w-[1480px]">
             <section className="grid min-w-0 gap-4">
               <p className="text-[11px] font-bold tracking-[.21em] text-muted uppercase">{copy.eyebrow}</p>
               <div className="page-heading flex items-center justify-between gap-4">
@@ -195,25 +226,24 @@ function Shell() {
               <Body page={page} />
               {!TABLE_PAGES.has(page) && page !== "house" && state.last.game === page ? <Stage title={state.last.title} line={state.last.line} tone={state.last.tone} /> : null}
             </section>
-            <aside className="right-rail overflow-hidden">
+            <aside className="right-rail">
               <div className="flex items-center justify-between px-4 pt-4">
                 <div>
                   <p className="text-[9px] tracking-[.16em] text-muted uppercase">House</p>
-                  <h2 className="font-display text-xl">Floor</h2>
+                  <h2 className="font-display text-xl">FELT</h2>
                 </div>
-                <span className="rounded-full border border-line px-2 py-1 text-[9px] text-gold">LIVE</span>
               </div>
               <div className="mt-3 border-t border-line">
-                <RailRow label="Floor bank" value={`${formatFelt(bank)} FELT`} hot />
-                <RailRow label="Your vault" value={`${formatFelt(shownVault)} FELT`} />
-                <RailRow label="Burned" value={`${formatFelt(burned)} FELT`} />
-                <RailRow label="Buyback" value={`${formatFelt(buyback)} FELT`} />
-                <RailRow label="Stakers" value={`${formatFelt(stakers)} FELT`} />
+                <RailRow label="House FELT" value={`${formatFelt(bank)}`} hot />
+                <RailRow label="Your vault" value={state.address ? `${formatFelt(shownVault)}` : "—"} />
+                <RailRow label="Burned" value={`${formatFelt(burned)}`} />
+                <RailRow label="Buyback" value={`${formatFelt(buyback)}`} />
+                <RailRow label="Stakers" value={`${formatFelt(stakers)}`} />
               </div>
               <div className="border-t border-line px-4 py-4">
-                <p className="text-xs font-semibold">Net loss allocation</p>
+                <p className="text-xs font-semibold">These figures are FELT, not CRO.</p>
                 <div className="split-bar my-3"><span /><span /><span /><span /></div>
-                <p className="text-[11px] leading-relaxed text-muted">15% burned · 5% buyback · 10% stakers · 70% stays in the house.</p>
+                <p className="text-[11px] leading-relaxed text-muted">The house number is FELT locked in the contract. It is not a CRO balance, and it is not a win. A player is paid only after FELT is deposited and the bet settles.</p>
               </div>
             </aside>
           </div>
@@ -292,17 +322,8 @@ function useForm() {
   const [local, setLocal] = useState("");
   const [busy, setBusy] = useState(false);
   const live = Boolean(api.state.address && api.state.chainOk);
-  function go(build: () => Action) {
-    try {
-      setLocal("");
-      if (live) {
-        setLocal("This is not on the Cronos contract yet.");
-        return;
-      }
-      api.send(build());
-    } catch (error) {
-      setLocal(error instanceof Error ? error.message : "Check that amount.");
-    }
+  function go(_build: () => Action) {
+    setLocal(live ? "This is not open on Cronos yet." : "Connect a Cronos wallet.");
   }
   async function run(task: () => Promise<void>) {
     try {
@@ -329,7 +350,7 @@ function Bomb({ text }: { text: string }) {
 }
 
 function DeskPage() {
-  const { state, send, go, run, busy, local, live } = useForm();
+  const { state, go, run, busy, local, live } = useForm();
   const [brief, setBrief] = useState("");
   const [hours, setHours] = useState("24");
   const [pay, setPay] = useState("10");
@@ -390,10 +411,10 @@ function DeskPage() {
             <p className="text-xs text-muted">Submit before {new Date(job.deadline).toLocaleString()}.</p>
             <div className="flex flex-wrap gap-2">
               {job.state === 0 ? <Go onClick={() => go(() => ({ type: "job-submit", id: job.id, work }))}>Submit</Go> : null}
-              {job.state === 0 ? <Go quiet onClick={() => send({ type: "job-cancel", id: job.id })}>Cancel</Go> : null}
-              {job.state === 1 ? <Go onClick={() => send({ type: "job-approve", id: job.id })}>Pay</Go> : null}
+              {job.state === 0 ? <Go quiet onClick={() => go(() => ({ type: "job-cancel", id: job.id }))}>Cancel</Go> : null}
+              {job.state === 1 ? <Go onClick={() => go(() => ({ type: "job-approve", id: job.id }))}>Pay</Go> : null}
               {job.state === 1 ? <Go quiet onClick={() => go(() => ({ type: "job-reject", id: job.id, reason }))}>Send back</Go> : null}
-              {job.state === 1 ? <Go quiet onClick={() => send({ type: "job-settle", id: job.id })}>Settle silence</Go> : null}
+              {job.state === 1 ? <Go quiet onClick={() => go(() => ({ type: "job-settle", id: job.id }))}>Settle silence</Go> : null}
             </div>
           </li>
         ))}
@@ -403,7 +424,7 @@ function DeskPage() {
 }
 
 function RacePage() {
-  const { state, send, go, local } = useForm();
+  const { state, go, local } = useForm();
   const [name, setName] = useState("Tonight");
   const [hours, setHours] = useState("1");
   const [prize, setPrize] = useState("100");
@@ -420,7 +441,7 @@ function RacePage() {
             <strong>{race.name} · {formatFelt(race.prize)} FELT</strong>
             <p className="text-sm text-muted">Chair A {formatFelt(race.net[0])} · {race.wins[0]} wins. Chair B {formatFelt(race.net[1])} · {race.wins[1]} wins.</p>
             <p className="text-xs text-muted">{race.settled ? "Settled" : `Ends ${new Date(race.end).toLocaleString()}`}</p>
-            {!race.settled ? <Go quiet onClick={() => send({ type: "contest-claim", id: race.id })}>Settle</Go> : null}
+            {!race.settled ? <Go quiet onClick={() => go(() => ({ type: "contest-claim", id: race.id }))}>Settle</Go> : null}
           </li>
         ))}
       </ul>
@@ -437,7 +458,7 @@ function WalletPage() {
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="Wallet" value={`${formatFelt(state.address ? state.chainWallet : 0n)} FELT`} />
         <Stat label="Vault" value={`${formatFelt(state.address ? state.chainVault : 0n)} FELT`} />
-        <Stat label="CRO" value={state.address ? formatCro(state.chainCro) : "—"} />
+        <Stat label="Gas · CRO" value={state.address ? formatCro(state.chainCro) : "—"} />
       </div>
       <Field label="Amount · FELT" value={amount} onChange={setAmount} />
       <div className="flex flex-wrap gap-2">
@@ -461,7 +482,7 @@ function WalletPage() {
 }
 
 function StakePage() {
-  const { state, send, go, local, live } = useForm();
+  const { state, go, local, live } = useForm();
   const [tier, setTier] = useState("1");
   const [cro, setCro] = useState("100");
   const lock = state.seats[state.acting].lock;
@@ -478,8 +499,8 @@ function StakePage() {
       <Field label="CRO to lock" value={cro} onChange={setCro} />
       <div className="flex flex-wrap gap-2">
         <Go onClick={() => go(() => ({ type: "stake", tier: Number(tier) as 1 | 2 | 3, cro: BigInt(cro) }))}>Lock</Go>
-        <Go quiet onClick={() => send({ type: "stake-claim" })}>Claim FELT</Go>
-        <Go quiet onClick={() => send({ type: "unstake" })}>Unstake</Go>
+        <Go quiet onClick={() => go(() => ({ type: "stake-claim" }))}>Claim FELT</Go>
+        <Go quiet onClick={() => go(() => ({ type: "unstake" }))}>Unstake</Go>
       </div>
       <Bomb text={local} />
     </div>
@@ -487,7 +508,7 @@ function StakePage() {
 }
 
 function TithePage() {
-  const { state, send, go, local } = useForm();
+  const { state, go, local } = useForm();
   const [tier, setTier] = useState("1");
   const [n, setN] = useState("1");
   const pack = state.seats[state.acting].tithe;
@@ -502,7 +523,7 @@ function TithePage() {
       <div className="flex flex-wrap gap-2">
         <Go onClick={() => go(() => ({ type: "tithe", tier: Number(tier) }))}>Buy pack</Go>
         <Go quiet onClick={() => go(() => ({ type: "tithe-allocate", n: Number(n) }))}>Allocate</Go>
-        <Go quiet onClick={() => send({ type: "tithe-close" })}>Close pack</Go>
+        <Go quiet onClick={() => go(() => ({ type: "tithe-close" }))}>Close pack</Go>
       </div>
       <Bomb text={local} />
     </div>
@@ -510,7 +531,7 @@ function TithePage() {
 }
 
 function PilgrimPage() {
-  const { state, send, go, local } = useForm();
+  const { state, go, local } = useForm();
   const [tier, setTier] = useState("1");
   const [amount, setAmount] = useState(formatFelt(FAITH_MIN));
   const seat = state.seats[state.acting];
@@ -527,7 +548,7 @@ function PilgrimPage() {
         {seat.pilgrims.map((row, index) => (
           <li key={`${row.unlockAt}-${index}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line px-3 py-3 text-sm">
             <span>{formatFelt(row.amount)} FELT · unlocks {new Date(row.unlockAt).toLocaleDateString()}</span>
-            <Go quiet onClick={() => send({ type: "pilgrim-claim", index })}>Claim</Go>
+            <Go quiet onClick={() => go(() => ({ type: "pilgrim-claim", index }))}>Claim</Go>
           </li>
         ))}
       </ul>

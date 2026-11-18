@@ -191,10 +191,13 @@ export async function withdrawFelt(amount: bigint) {
 async function cover(stake: bigint) {
   const account = await signer();
   const me = await account.getAddress();
+  const felt = new Contract(FELT, feltAbi, account);
   const floor = new Contract(FLOOR, floorAbi, account);
   const vault = (await floor.vault(me)) as bigint;
   if (vault >= stake) return me;
   const need = stake - vault;
+  const balance = (await felt.balanceOf(me)) as bigint;
+  if (balance < need) throw new Error("The vault is empty and this wallet has no FELT to deposit.");
   await allow(need);
   await sent(floor.deposit(need));
   return me;
