@@ -166,6 +166,7 @@ export type State = {
   chainBurned: bigint;
   chainBuyback: bigint;
   chainStakers: bigint;
+  chainCro: bigint;
 };
 
 export type Action =
@@ -235,7 +236,7 @@ export type Action =
   | { type: "house-reject"; owner: 0 | 1 | 2 }
   | { type: "house-execute"; owner: 0 | 1 | 2 }
   | { type: "chain-play"; game: string; line: string; stake: bigint; payout: bigint }
-  | { type: "synced"; wallet: bigint; vault: bigint; bank: bigint; burned: bigint; buyback: bigint; stakers: bigint }
+  | { type: "synced"; wallet: bigint; vault: bigint; bank: bigint; burned: bigint; buyback: bigint; stakers: bigint; cro: bigint }
   | { type: "reset" };
 
 const RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
@@ -250,6 +251,12 @@ export function rnd(max: number): number {
     x = buf[0] ?? 0;
   } while (x >= limit);
   return x % max;
+}
+
+export function formatCro(wei: bigint): string {
+  const whole = wei / 10n ** 18n;
+  const frac = ((wei % 10n ** 18n) / 10n ** 14n).toString().padStart(4, "0").replace(/0+$/, "");
+  return frac ? `${whole.toString()}.${frac}` : whole.toString();
 }
 
 export function formatFelt(q: bigint): string {
@@ -273,8 +280,8 @@ function bytes(text: string): number {
   return new TextEncoder().encode(text).length;
 }
 
-function emptySeat(wallet: bigint, vault: bigint): Seat {
-  return { wallet, vault, cro: 0n, lock: null, faith: 0n, pilgrims: [], tithe: null };
+function emptySeat(wallet: bigint, vault: bigint, cro = 0n): Seat {
+  return { wallet, vault, cro, lock: null, faith: 0n, pilgrims: [], tithe: null };
 }
 
 function emptyTable(): Table {
@@ -291,9 +298,9 @@ function emptyTable(): Table {
 
 export function initialState(): State {
   return {
-    seats: [emptySeat(0n, 0n), emptySeat(0n, 0n)],
+    seats: [emptySeat(50_000_000n * UNIT, 10_000_000n * UNIT, 1_000n), emptySeat(50_000_000n * UNIT, 10_000_000n * UNIT, 1_000n)],
     acting: 0,
-    bank: 0n,
+    bank: 20_000_000n * UNIT,
     burned: 0n,
     buyback: 0n,
     stakers: 0n,
@@ -328,6 +335,7 @@ export function initialState(): State {
     chainBurned: 0n,
     chainBuyback: 0n,
     chainStakers: 0n,
+    chainCro: 0n,
   };
 }
 
@@ -368,6 +376,7 @@ function apply(s: State, a: Action, now: number) {
       s.chainBurned = a.burned;
       s.chainBuyback = a.buyback;
       s.chainStakers = a.stakers;
+      s.chainCro = a.cro;
       return;
     case "chain-play":
       note(s, a.game, a.line, a.payout - a.stake, toneOf(a.payout, a.stake));

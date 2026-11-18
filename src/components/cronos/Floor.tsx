@@ -3,10 +3,11 @@ import { Menu, Wallet, X } from "lucide-react";
 import { Area, Field, Go, Picks, Stage, Stat } from "@/components/cronos/bits";
 import { PickPage, BaccaratPage, BjPage, DicePage, DuelPage, HiloPage, KenoPage, LotteryPage, MinesPage, PlinkoPage, PokerPage, RoulettePage, SlotsPage, TablePage } from "@/components/cronos/tables";
 import { FloorProvider, useFloor } from "@/lib/cronos/store";
-import { FLOOR } from "@/lib/cronos/addresses";
-import { chainBalances, claimDrip, depositFelt, withdrawFelt } from "@/lib/cronos/chain";
+import { FLOOR, OWNERS } from "@/lib/cronos/addresses";
+import { approveHouse, cancelJob, chainBalances, claimDrip, depositFelt, payJob, postJob, proposeHouse, readDesk, rejectHouse, returnJob, sendHouse, sendWork, silenceJob, withdrawFelt, type ChainJob, type ChainProposal } from "@/lib/cronos/chain";
 import {
   FAITH_MIN,
+  formatCro,
   formatFelt,
   owedOf,
   parseFelt,
@@ -85,7 +86,7 @@ function Shell() {
     let stop = false;
     const pull = () => {
       void chainBalances(state.address).then((row) => {
-        if (!stop) send({ type: "synced", wallet: row.wallet, vault: row.vault, bank: row.bank, burned: row.burned, buyback: row.buyback, stakers: row.stakers });
+        if (!stop) send({ type: "synced", wallet: row.wallet, vault: row.vault, bank: row.bank, burned: row.burned, buyback: row.buyback, stakers: row.stakers, cro: row.cro });
       }).catch(() => undefined);
     };
     pull();
@@ -116,8 +117,8 @@ function Shell() {
                 chainId: "0x19",
                 chainName: "Cronos",
                 nativeCurrency: { name: "CRO", symbol: "CRO", decimals: 18 },
-                rpcUrls: ["https://evm.cronos.com"],
-                blockExplorerUrls: ["https://explorer.cronos.com"],
+                rpcUrls: ["https://evm.cronos.org"],
+                blockExplorerUrls: ["https://cronoscan.com"],
               },
             ],
           });
@@ -160,9 +161,6 @@ function Shell() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={() => send({ type: "act", seat: state.acting === 0 ? 1 : 0 })} className="hidden min-h-11 rounded-full border border-line px-4 text-sm sm:inline">
-                Seat {state.acting === 0 ? "A" : "B"}
-              </button>
               <button type="button" onClick={() => void connect()} className="wallet-button">
                 <Wallet size={15} aria-hidden />
                 <span>{state.address ? short(state.address) : "Connect wallet"}</span>
@@ -293,9 +291,14 @@ function useForm() {
   const api = useFloor();
   const [local, setLocal] = useState("");
   const [busy, setBusy] = useState(false);
+  const live = Boolean(api.state.address && api.state.chainOk);
   function go(build: () => Action) {
     try {
       setLocal("");
+      if (live) {
+        setLocal("This is not on the Cronos contract yet.");
+        return;
+      }
       api.send(build());
     } catch (error) {
       setLocal(error instanceof Error ? error.message : "Check that amount.");
@@ -315,9 +318,9 @@ function useForm() {
   async function refresh() {
     if (!api.state.address) return;
     const row = await chainBalances(api.state.address);
-    api.send({ type: "synced", wallet: row.wallet, vault: row.vault, bank: row.bank, burned: row.burned, buyback: row.buyback, stakers: row.stakers });
+    api.send({ type: "synced", wallet: row.wallet, vault: row.vault, bank: row.bank, burned: row.burned, buyback: row.buyback, stakers: row.stakers, cro: row.cro });
   }
-  return { ...api, local, go, run, busy, refresh };
+  return { ...api, local, go, run, busy, refresh, live };
 }
 
 function Bomb({ text }: { text: string }) {
@@ -326,24 +329,56 @@ function Bomb({ text }: { text: string }) {
 }
 
 function DeskPage() {
-  const { state, send, go, local } = useForm();
+  const { state, send, go, run, busy, local, live } = useForm();
   const [brief, setBrief] = useState("");
   const [hours, setHours] = useState("24");
   const [pay, setPay] = useState("10");
   const [work, setWork] = useState("");
   const [reason, setReason] = useState("");
+  const [jobs, setJobs] = useState<ChainJob[]>([]);
+  useEffect(() => {
+    if (!live) return;
+    let stop = false;
+    void readDesk(state.address).then((row) => {
+      if (!stop) setJobs(row.jobs);
+    }).catch(() => undefined);
+    return () => { stop = true; };
+  }, [live, state.address, busy]);
+  const me = state.address.toLowerCase();
   return (
     <div className="grid gap-4">
-      <Area label="Brief" value={brief} onChange={setBrief} hint="Locked once posted. 240 bytes." />
-      <Field label="Hours to submit" value={hours} onChange={setHours} hint="1 to 336." />
-      <Field label="Pay · FELT" value={pay} onChange={setPay} hint="From this seat's vault. Minimum 1." />
-      <Go onClick={() => go(() => ({ type: "job-open", brief, hours: Number(hours), pay: parseFelt(pay) }))}>Post the job</Go>
-      <Area label="Work" value={work} onChange={setWork} hint="The other seat submits. 240 bytes." />
-      <Field label="Rejection reason" value={reason} onChange={setReason} hint="Required to send the FELT back." />
+      <Area label="Brief" value={brief} onChange={setBrief} hint="The brief locks when you post it." />
+      <Field label="Hours to submit" value={hours} onChange={setHours} hint="From 1 hour up to 14 days." />
+      <Field label="Pay · FELT" value={pay} onChange={setPay} hint="Taken from your vault. Minimum 1." />
+      <Go disabled={busy} onClick={() => {
+        if (live) void run(async () => { await postJob(brief, Number(hours), parseFelt(pay)); });
+        else go(() => ({ type: "job-open", brief, hours: Number(hours), pay: parseFelt(pay) }));
+      }}>Post the job</Go>
+      <Area label="Work" value={work} onChange={setWork} hint="Someone else submits the work." />
+      <Field label="Rejection reason" value={reason} onChange={setReason} hint="Required if you send the FELT back." />
       <Bomb text={local} />
       <ul className="grid gap-3">
-        {state.jobs.length === 0 ? <li className="text-sm text-muted">No jobs yet.</li> : null}
-        {state.jobs.map((job) => (
+        {live && jobs.length === 0 ? <li className="text-sm text-muted">No jobs yet.</li> : null}
+        {!live && state.jobs.length === 0 ? <li className="text-sm text-muted">No jobs yet.</li> : null}
+        {live ? jobs.map((job) => (
+          <li key={job.index} className="grid gap-2 rounded-lg border border-line p-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <strong>#{job.id.toString()} · {formatFelt(job.pay)} FELT</strong>
+              <span className="text-xs text-muted uppercase">{job.state === 0 ? "Open" : job.state === 1 ? "Work in" : job.state === 2 ? "Paid" : "Returned"}</span>
+            </div>
+            <p className="text-sm">{job.brief}</p>
+            {job.work ? <p className="text-sm text-muted">Work: {job.work}</p> : null}
+            {job.reason ? <p className="text-sm text-muted">Reason: {job.reason}</p> : null}
+            <p className="text-xs text-muted">Posted by {short(job.creator)}. Open until {new Date(Number(job.deadline) * 1000).toLocaleString()}.</p>
+            <div className="flex flex-wrap gap-2">
+              {job.state === 0 && job.creator.toLowerCase() !== me ? <Go disabled={busy} onClick={() => void run(async () => { await sendWork(job.index, work); })}>Submit</Go> : null}
+              {job.state === 0 && job.creator.toLowerCase() === me ? <Go quiet disabled={busy} onClick={() => void run(async () => { await cancelJob(job.index); })}>Cancel</Go> : null}
+              {job.state === 1 && job.creator.toLowerCase() === me ? <Go disabled={busy} onClick={() => void run(async () => { await payJob(job.index); })}>Pay</Go> : null}
+              {job.state === 1 && job.creator.toLowerCase() === me ? <Go quiet disabled={busy} onClick={() => void run(async () => { await returnJob(job.index, reason); })}>Send back</Go> : null}
+              {job.state === 1 ? <Go quiet disabled={busy} onClick={() => void run(async () => { await silenceJob(job.index); })}>Settle silence</Go> : null}
+            </div>
+          </li>
+        )) : state.jobs.map((job) => (
           <li key={job.id} className="grid gap-2 rounded-lg border border-line p-3">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <strong>#{job.id} · {formatFelt(job.pay)} FELT</strong>
@@ -352,7 +387,7 @@ function DeskPage() {
             <p className="text-sm">{job.brief}</p>
             {job.work ? <p className="text-sm text-muted">Work: {job.work}</p> : null}
             {job.reason ? <p className="text-sm text-muted">Reason: {job.reason}</p> : null}
-            <p className="text-xs text-muted">Seat {job.creator === 0 ? "A" : "B"} posted it. Submit before {new Date(job.deadline).toLocaleString()}.</p>
+            <p className="text-xs text-muted">Submit before {new Date(job.deadline).toLocaleString()}.</p>
             <div className="flex flex-wrap gap-2">
               {job.state === 0 ? <Go onClick={() => go(() => ({ type: "job-submit", id: job.id, work }))}>Submit</Go> : null}
               {job.state === 0 ? <Go quiet onClick={() => send({ type: "job-cancel", id: job.id })}>Cancel</Go> : null}
@@ -376,14 +411,14 @@ function RacePage() {
     <div className="grid gap-4">
       <Field label="Name" value={name} onChange={setName} />
       <Field label="Hours" value={hours} onChange={setHours} />
-      <Field label="Prize · FELT" value={prize} onChange={setPrize} hint="Locked from this seat's vault." />
+      <Field label="Prize · FELT" value={prize} onChange={setPrize} hint="Locked from the vault before the first bet." />
       <Go onClick={() => go(() => ({ type: "contest-open", name, hours: Number(hours), prize: parseFelt(prize) }))}>Open the race</Go>
       <Bomb text={local} />
       <ul className="grid gap-3">
         {state.contests.map((race) => (
           <li key={race.id} className="grid gap-2 rounded-lg border border-line p-3">
             <strong>{race.name} · {formatFelt(race.prize)} FELT</strong>
-            <p className="text-sm text-muted">Seat A {formatFelt(race.net[0])} · {race.wins[0]} wins. Seat B {formatFelt(race.net[1])} · {race.wins[1]} wins.</p>
+            <p className="text-sm text-muted">Chair A {formatFelt(race.net[0])} · {race.wins[0]} wins. Chair B {formatFelt(race.net[1])} · {race.wins[1]} wins.</p>
             <p className="text-xs text-muted">{race.settled ? "Settled" : `Ends ${new Date(race.end).toLocaleString()}`}</p>
             {!race.settled ? <Go quiet onClick={() => send({ type: "contest-claim", id: race.id })}>Settle</Go> : null}
           </li>
@@ -402,7 +437,7 @@ function WalletPage() {
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="Wallet" value={`${formatFelt(state.address ? state.chainWallet : 0n)} FELT`} />
         <Stat label="Vault" value={`${formatFelt(state.address ? state.chainVault : 0n)} FELT`} />
-        <Stat label="CRO" value="—" />
+        <Stat label="CRO" value={state.address ? formatCro(state.chainCro) : "—"} />
       </div>
       <Field label="Amount · FELT" value={amount} onChange={setAmount} />
       <div className="flex flex-wrap gap-2">
@@ -426,7 +461,7 @@ function WalletPage() {
 }
 
 function StakePage() {
-  const { state, send, go, local } = useForm();
+  const { state, send, go, local, live } = useForm();
   const [tier, setTier] = useState("1");
   const [cro, setCro] = useState("100");
   const lock = state.seats[state.acting].lock;
@@ -434,11 +469,11 @@ function StakePage() {
   return (
     <div className="grid gap-4">
       <div className="grid gap-3 sm:grid-cols-3">
-        <Stat label="Your CRO" value={state.seats[state.acting].cro.toString()} />
+        <Stat label="Your CRO" value={state.address ? formatCro(state.chainCro) : "—"} />
         <Stat label="Total weight" value={state.weight.toString()} />
         <Stat label="Owed" value={`${formatFelt(due)} FELT`} />
       </div>
-      {lock ? <p className="text-sm text-muted">Locked {lock.amount.toString()} CRO at tier {lock.tier}. Unlocks {new Date(lock.unlockAt).toLocaleString()}.</p> : null}
+      {!live && lock ? <p className="text-sm text-muted">Locked {lock.amount.toString()} CRO at tier {lock.tier}. Unlocks {new Date(lock.unlockAt).toLocaleString()}.</p> : null}
       <Picks value={tier} onChange={setTier} options={[{ id: "1", label: "7 days · 1.0×" }, { id: "2", label: "30 days · 1.5×" }, { id: "3", label: "90 days · 2.0×" }]} />
       <Field label="CRO to lock" value={cro} onChange={setCro} />
       <div className="flex flex-wrap gap-2">
@@ -462,7 +497,7 @@ function TithePage() {
         { id: "1", label: "5 → 6" }, { id: "2", label: "10 → 13" }, { id: "3", label: "30 → 45" },
         { id: "4", label: "100 → 175" }, { id: "5", label: "250 → 500" }, { id: "6", label: "500 → 1,100" },
       ]} />
-      {pack ? <p className="text-sm text-muted">{pack.paid} paid and {pack.bonus} extra still in the pack. Escrow {formatFelt(pack.escrow)} FELT.</p> : <p className="text-sm text-muted">No pack is open on this seat.</p>}
+      {pack ? <p className="text-sm text-muted">{pack.paid} paid and {pack.bonus} extra still in the pack. Escrow {formatFelt(pack.escrow)} FELT.</p> : <p className="text-sm text-muted">No pack is open.</p>}
       <Field label="Scrolls to allocate" value={n} onChange={setN} />
       <div className="flex flex-wrap gap-2">
         <Go onClick={() => go(() => ({ type: "tithe", tier: Number(tier) }))}>Buy pack</Go>
@@ -502,11 +537,18 @@ function PilgrimPage() {
 }
 
 function HousePage() {
-  const { state, send, go, local } = useForm();
-  const [owner, setOwner] = useState("0");
+  const { state, run, busy, local, live } = useForm();
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("1000");
-  const who = Number(owner) as 0 | 1 | 2;
+  const [proposal, setProposal] = useState<ChainProposal | null>(null);
+  const owner = live && OWNERS.some((addr) => addr.toLowerCase() === state.address.toLowerCase());
+  useEffect(() => {
+    let stop = false;
+    void readDesk(state.address).then((row) => {
+      if (!stop) setProposal(row.proposal.open ? row.proposal : null);
+    }).catch(() => undefined);
+    return () => { stop = true; };
+  }, [state.address, busy]);
   return (
     <div className="grid gap-4">
       <div className="grid gap-3 sm:grid-cols-3">
@@ -514,17 +556,20 @@ function HousePage() {
         <Stat label="Staker pot" value={`${formatFelt(state.chainStakers)} FELT`} />
         <Stat label="Burned" value={`${formatFelt(state.chainBurned)} FELT`} />
       </div>
-      <p className="text-sm text-muted">A withdrawal needs two of the three owners, and it comes out of the house bank only.</p>
-      <Picks value={owner} onChange={setOwner} options={[{ id: "0", label: "Owner 1" }, { id: "1", label: "Owner 2" }, { id: "2", label: "Owner 3" }]} />
-      <Field label="Destination" value={to} onChange={setTo} />
-      <Field label="Amount · FELT" value={amount} onChange={setAmount} />
-      <div className="flex flex-wrap gap-2">
-        <Go onClick={() => go(() => ({ type: "house-propose", owner: who, to, amount: parseFelt(amount) }))}>Propose</Go>
-        <Go quiet onClick={() => send({ type: "house-sign", owner: who })}>Approve</Go>
-        <Go quiet onClick={() => send({ type: "house-execute", owner: who })}>Send</Go>
-        <Go quiet onClick={() => send({ type: "house-reject", owner: who })}>Reject</Go>
-      </div>
-      {state.proposal ? <p className="text-sm">Waiting: {formatFelt(state.proposal.amount)} FELT to {short(state.proposal.to)}. Signatures {state.proposal.sigs.map((on) => (on ? "yes" : "no")).join(" · ")}.</p> : <p className="text-sm text-muted">No withdrawal is waiting.</p>}
+      <p className="text-sm text-muted">A withdrawal needs two of the three owners. It comes out of the house bank only.</p>
+      {owner ? (
+        <>
+          <Field label="Destination" value={to} onChange={setTo} />
+          <Field label="Amount · FELT" value={amount} onChange={setAmount} />
+          <div className="flex flex-wrap gap-2">
+            <Go disabled={busy} onClick={() => void run(async () => { await proposeHouse(to, parseFelt(amount)); })}>Propose</Go>
+            <Go quiet disabled={busy} onClick={() => void run(async () => { await approveHouse(); })}>Approve</Go>
+            <Go quiet disabled={busy} onClick={() => void run(async () => { await sendHouse(); })}>Send</Go>
+            <Go quiet disabled={busy} onClick={() => void run(async () => { await rejectHouse(); })}>Reject</Go>
+          </div>
+        </>
+      ) : <p className="text-sm text-muted">Connect an owner wallet to move the bank.</p>}
+      {proposal ? <p className="text-sm">Waiting: {formatFelt(proposal.amount)} FELT to {short(proposal.to)}. A second owner has to approve before it can be sent.</p> : <p className="text-sm text-muted">No withdrawal is waiting.</p>}
       <Bomb text={local} />
     </div>
   );

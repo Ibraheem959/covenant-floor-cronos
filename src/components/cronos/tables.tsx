@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { Cards } from "@/components/cronos/bits";
 import {
   BaccaratStage,
@@ -12,7 +12,7 @@ import {
   RouletteStage,
   SlotsStage,
 } from "@/components/cronos/stage";
-import { chainBalances, claimDrip, depositFelt, playOnChain, withdrawFelt } from "@/lib/cronos/chain";
+import { chainBalances, claimDrip, depositFelt, playOnChain, withdrawFelt, buyScrolls, burnScrolls, drawLottery, readDesk } from "@/lib/cronos/chain";
 import { useFloor } from "@/lib/cronos/store";
 import { bjTotal, formatFelt, handName, parseFelt, resultLine, type Action } from "@/lib/cronos/logic";
 
@@ -33,7 +33,9 @@ function usePlay() {
         if (!live) throw new Error("Connect a Cronos wallet.");
         await chain();
         const row = await chainBalances(api.state.address);
-        api.send({ type: "synced", wallet: row.wallet, vault: row.vault, bank: row.bank, burned: row.burned, buyback: row.buyback, stakers: row.stakers });
+        api.send({ type: "synced", wallet: row.wallet, vault: row.vault, bank: row.bank, burned: row.burned, buyback: row.buyback, stakers: row.stakers, cro: row.cro });
+      } else if (live) {
+        throw new Error("This table is not on the Cronos contract yet.");
       } else {
         await new Promise((resolve) => window.setTimeout(resolve, wait));
         api.send(action());
@@ -69,7 +71,7 @@ function Cashier() {
 
   async function refresh() {
     const row = await chainBalances(state.address);
-    send({ type: "synced", wallet: row.wallet, vault: row.vault, bank: row.bank, burned: row.burned, buyback: row.buyback, stakers: row.stakers });
+    send({ type: "synced", wallet: row.wallet, vault: row.vault, bank: row.bank, burned: row.burned, buyback: row.buyback, stakers: row.stakers, cro: row.cro });
   }
 
   return (
@@ -505,7 +507,16 @@ export function LotteryPage() {
   const play = usePlay();
   const open = useContext(PickPage);
   const [n, setN] = useState("1");
-  const [burn, setBurn] = useState("0");
+  const [chain, setChain] = useState({ pot: 0n, round: 1n, mine: 0n });
+  useEffect(() => {
+    let stop = false;
+    void readDesk(play.state.address).then((row) => {
+      if (!stop) setChain({ pot: row.pot, round: row.round, mine: row.mine });
+    }).catch(() => undefined);
+    return () => { stop = true; };
+  }, [play.state.address, play.busy]);
+  const round = play.live ? chain.round.toString() : String(play.state.round);
+  const pot = play.live ? chain.pot : play.state.pot;
   return (
     <div className="grid gap-4">
       <div className="rule-card">
@@ -515,21 +526,16 @@ export function LotteryPage() {
           <p>One scroll is 1,000 FELT. Paying fills the pot. Burning still enters the draw.</p>
         </div>
       </div>
-      <LotteryVisual round={String(play.state.round)} pot={`${formatFelt(play.state.pot)} FELT`} />
+      <LotteryVisual round={round} pot={`${formatFelt(pot)} FELT`} />
       <div className="game-action-grid">
-        <Move label="Pay into pot" onSubmit={() => void play.play(() => ({ type: "scroll-pay", n: Number(n) }), undefined, 280)}>
+        <Move label="Pay into pot" busy={play.busy} onSubmit={() => void play.play(() => ({ type: "scroll-pay", n: Number(n) }), () => buyScrolls(Number(n)), 280)}>
           <Amount label="Scrolls" value={n} onChange={setN} />
         </Move>
-        <Move label="Burn scrolls" onSubmit={() => void play.play(() => ({ type: "scroll-burn", n: Number(n) }), undefined, 280)} />
-        <Move label="Pay and burn" onSubmit={() => void play.play(() => ({ type: "scroll-both", pay: Number(n), burn: Number(burn) }), undefined, 280)}>
-          <Amount label="Scrolls to burn" value={burn} onChange={setBurn} />
-        </Move>
-        <Move label="Draw" onSubmit={() => void play.play(() => ({ type: "draw" }), undefined, 280)} />
+        <Move label="Burn scrolls" busy={play.busy} onSubmit={() => void play.play(() => ({ type: "scroll-burn", n: Number(n) }), () => burnScrolls(Number(n)), 280)} />
+        <Move label="Draw" busy={play.busy} onSubmit={() => void play.play(() => ({ type: "draw" }), () => drawLottery(), 280)} />
       </div>
       <Fault text={play.local} />
-      <ul className="grid gap-1 text-sm text-muted">
-        {play.state.tickets.map((row) => <li key={row.seat}>Seat {row.seat === 0 ? "A" : "B"} · {row.n} scrolls</li>)}
-      </ul>
+      <p className="text-sm text-muted">{play.live ? `Your scrolls this round: ${chain.mine.toString()}.` : `Scrolls on this table: ${play.state.totalTickets}.`}</p>
       <Lobby onOpen={open} />
     </div>
   );
