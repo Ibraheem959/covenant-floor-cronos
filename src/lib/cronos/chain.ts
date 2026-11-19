@@ -8,13 +8,12 @@ const feltAbi = [
   "function balanceOf(address) view returns (uint256)",
   "function allowance(address,address) view returns (uint256)",
   "function approve(address,uint256) returns (bool)",
-  "function drip()",
-  "function dripped(address) view returns (bool)",
 ];
 
 const floorAbi = [
   "function deposit(uint256)",
   "function withdraw(uint256)",
+  "function fundHouse(uint256)",
   "function vault(address) view returns (uint256)",
   "function bank() view returns (uint256)",
   "function burned() view returns (uint256)",
@@ -170,12 +169,6 @@ async function allow(amount: bigint) {
   return account;
 }
 
-export async function claimDrip() {
-  const account = await signer();
-  const felt = new Contract(FELT, feltAbi, account);
-  await sent(felt.drip());
-}
-
 export async function depositFelt(amount: bigint) {
   const account = await allow(amount);
   const floor = new Contract(FLOOR, floorAbi, account);
@@ -297,6 +290,12 @@ export async function cancelJob(index: number) {
   const account = await signer();
   const floor = new Contract(FLOOR, floorAbi, account);
   await sent(floor.cancelJob(index));
+}
+
+export async function fundHouse(amount: bigint) {
+  const account = await allow(amount);
+  const floor = new Contract(FLOOR, floorAbi, account);
+  await sent(floor.fundHouse(amount));
 }
 
 export async function proposeHouse(to: string, amount: bigint) {

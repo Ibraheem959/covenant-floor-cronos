@@ -12,7 +12,7 @@ import {
   RouletteStage,
   SlotsStage,
 } from "@/components/cronos/stage";
-import { chainBalances, claimDrip, depositFelt, playOnChain, withdrawFelt, buyScrolls, burnScrolls, drawLottery, readDesk } from "@/lib/cronos/chain";
+import { chainBalances, depositFelt, playOnChain, withdrawFelt, buyScrolls, burnScrolls, drawLottery, readDesk } from "@/lib/cronos/chain";
 import { useFloor } from "@/lib/cronos/store";
 import { bjTotal, formatFelt, handName, parseFelt, resultLine, type Action } from "@/lib/cronos/logic";
 
@@ -93,7 +93,6 @@ function Cashier() {
           await refresh();
         })}>Withdraw</button>
       </div>
-      {live ? <button type="button" className="action-button action-primary cashier-claim" disabled={busy} onClick={() => void run(async () => { await claimDrip(); await refresh(); })}>Claim 10,000</button> : null}
       {note ? <p className="inline-error">{note}</p> : null}
     </section>
   );

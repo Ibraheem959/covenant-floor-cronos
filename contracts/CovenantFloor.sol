@@ -78,16 +78,22 @@ contract Felt {
     }
 }
 
+interface IFelt {
+    function balanceOf(address account) external view returns (uint256);
+    function transfer(address to, uint256 amount) external returns (bool);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+}
+
 contract CovenantFloor {
-    uint256 public constant UNIT = 1e6;
-    uint256 public constant MIN_BET = 1e6;
-    uint256 public constant MAX_BET = 500_000 * 1e6;
-    uint256 public constant KENO_MAX = 10_000 * 1e6;
-    uint256 public constant POKER_MAX_ANTE = 5_000 * 1e6;
-    uint256 public constant SCROLL = 1_000 * 1e6;
+    uint256 public constant UNIT = 1e18;
+    uint256 public constant MIN_BET = 1e18;
+    uint256 public constant MAX_BET = 500_000 * 1e18;
+    uint256 public constant KENO_MAX = 10_000 * 1e18;
+    uint256 public constant POKER_MAX_ANTE = 5_000 * 1e18;
+    uint256 public constant SCROLL = 1_000 * 1e18;
     uint256 public constant JOB_REVIEW = 48 hours;
 
-    Felt public immutable felt;
+    IFelt public immutable felt;
     address[3] public owners;
     address public buyback;
     address public burnSink;
@@ -136,7 +142,7 @@ contract CovenantFloor {
         _;
     }
 
-    constructor(Felt token, address[3] memory three, address buybackWallet, address burnWallet) {
+    constructor(IFelt token, address[3] memory three, address buybackWallet, address burnWallet) {
         felt = token;
         owners = three;
         buyback = buybackWallet;
@@ -145,8 +151,7 @@ contract CovenantFloor {
 
     function deposit(uint256 amount) external {
         require(amount > 0, "amount");
-        require(felt.transferFrom(msg.sender, address(this), amount), "transfer");
-        vault[msg.sender] += amount;
+        vault[msg.sender] += _pull(amount);
     }
 
     function withdraw(uint256 amount) external {
@@ -156,8 +161,15 @@ contract CovenantFloor {
     }
 
     function fundHouse(uint256 amount) external {
+        require(amount > 0, "amount");
+        bank += _pull(amount);
+    }
+
+    function _pull(uint256 amount) internal returns (uint256 got) {
+        uint256 beforeBal = felt.balanceOf(address(this));
         require(felt.transferFrom(msg.sender, address(this), amount), "transfer");
-        bank += amount;
+        got = felt.balanceOf(address(this)) - beforeBal;
+        require(got > 0, "received");
     }
 
     function _take(address player, uint256 stake) internal {
@@ -398,14 +410,13 @@ contract CovenantFloor {
     function sealScroll(uint256 n) external {
         require(n >= 1 && n <= 100, "scrolls");
         uint256 cost = SCROLL * n;
-        require(felt.transferFrom(msg.sender, address(this), cost), "transfer");
-        pot += cost;
+        pot += _pull(cost);
         _tickets(msg.sender, n);
     }
 
     function burnScroll(uint256 n) external {
         require(n >= 1 && n <= 100, "scrolls");
-        felt.burn(msg.sender, SCROLL * n);
+        require(felt.transferFrom(msg.sender, burnSink, SCROLL * n), "burn");
         burned += SCROLL * n;
         _tickets(msg.sender, n);
     }

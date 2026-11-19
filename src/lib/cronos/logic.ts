@@ -1,6 +1,6 @@
-/** Covenant Floor rules, integer FELT (6 decimals), same payouts as the Supra floor. */
+/** Covenant Floor rules, integer FELT (18 decimals), same payouts as the Supra floor. */
 
-export const UNIT = 1_000_000n;
+export const UNIT = 10n ** 18n;
 export const MIN_BET = UNIT;
 export const MAX_BET = 500_000n * UNIT;
 export const KENO_MAX = 10_000n * UNIT;
@@ -263,7 +263,7 @@ export function formatFelt(q: bigint): string {
   const neg = q < 0n;
   const v = neg ? -q : q;
   const whole = v / UNIT;
-  const frac = (v % UNIT).toString().padStart(6, "0").replace(/0+$/, "");
+  const frac = (v % UNIT).toString().padStart(18, "0").replace(/0+$/, "").slice(0, 6).replace(/0+$/, "");
   const wholeText = whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const body = frac ? `${wholeText}.${frac}` : wholeText;
   return neg ? `-${body}` : body;
@@ -273,7 +273,7 @@ export function parseFelt(raw: string): bigint {
   const value = raw.trim();
   if (!/^\d+(?:\.\d{1,6})?$/.test(value)) throw new Error("Enter FELT with up to 6 decimal places.");
   const [w = "0", f = ""] = value.split(".");
-  return BigInt(w) * UNIT + BigInt(f.padEnd(6, "0"));
+  return BigInt(w) * UNIT + BigInt(f.padEnd(18, "0"));
 }
 
 function bytes(text: string): number {

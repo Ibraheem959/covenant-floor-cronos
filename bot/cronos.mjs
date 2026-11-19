@@ -1,10 +1,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { escapeHtml, formatFelt, formatMultiple, shortAddress } from "./chain.mjs";
+import { escapeHtml, formatMultiple, shortAddress } from "./chain.mjs";
 
 const RPC = process.env.CRONOS_RPC || "https://evm.cronos.org";
-const FLOOR = "0xaFa3ab1FC542cda65b14c57A1A5AE5ca494b88cC";
+const FLOOR = "0x828D84Ec3Ca9B307be03aD1658a6D98Bf2C4c269";
 const PLAY_TOPIC = "0x4604e1e6dd5abe456f081d0d88cd87f05afbfe4e9bd011b3654ff470d7e74e33";
 const HOUSE_TOPIC = "0x53830f159a54d10c11bc5258401539181cd3ba65e8881a5de719af03470f087d";
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
@@ -84,7 +84,11 @@ export function decodeHouse(log) {
 }
 
 function feltLine(amount) {
-  return `${formatFelt(amount)} FELT`;
+  const scale = 10n ** 18n;
+  const whole = amount / scale;
+  const fraction = (amount % scale).toString().padStart(18, "0").replace(/0+$/, "").slice(0, 6).replace(/0+$/, "");
+  const text = `${whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${fraction ? `.${fraction}` : ""}`;
+  return `${text} FELT`;
 }
 
 function hourKey(date = new Date()) {

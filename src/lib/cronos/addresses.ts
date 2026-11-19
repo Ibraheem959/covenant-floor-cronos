@@ -1,5 +1,5 @@
-export const FELT = "0xb757DBAbf4cc0c93191471e84bdd95201DBDe0a3";
-export const FLOOR = "0xaFa3ab1FC542cda65b14c57A1A5AE5ca494b88cC";
+export const FELT = "0x03b9d039e4a9de5c89c43b5917a39daacedea391";
+export const FLOOR = "0x828D84Ec3Ca9B307be03aD1658a6D98Bf2C4c269";
 export const CHAIN_ID = 25;
 export const OWNERS = [
   "0xD4cEE444652CB3948FDc788c7Be4282ec6D3A258",

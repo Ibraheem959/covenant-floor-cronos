@@ -17,10 +17,10 @@ Lottery, pay desk, competition, dice, roulette, slots, plinko, keno, baccarat, h
 
 Connect a wallet on Cronos mainnet (chain 25). MetaMask or the Crypto.com Onchain Wallet. Gas is CRO.
 
-FELT: `0xb757DBAbf4cc0c93191471e84bdd95201DBDe0a3`  
-House: `0xaFa3ab1FC542cda65b14c57A1A5AE5ca494b88cC`
+FELT: `0x03b9d039e4a9de5c89c43b5917a39daacedea391`  
+House: `0x828D84Ec3Ca9B307be03aD1658a6D98Bf2C4c269`
 
-Dice, roulette, slots, plinko, the lottery, and the pay desk settle on the contract. Claim 10,000 FELT once from the wallet page, then deposit to the vault. The other tables use the same rules in the browser and do not move the Cronos vault.
+Dice, roulette, slots, plinko, the lottery, and the pay desk settle on the contract. Deposit FELT to the vault before a wager. The launched token has no free claim. The other tables use the same rules in the browser and do not move the Cronos vault.
 
 ```bash
 npm install

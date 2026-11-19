@@ -6,12 +6,12 @@ Players do not see this file. The site copy is the rules of the floor. This file
 
 Chain 25, Cronos mainnet.
 
-- FELT `0xb757DBAbf4cc0c93191471e84bdd95201DBDe0a3` — 6 decimals. Not the Supra FELT asset.
-- Floor `0xaFa3ab1FC542cda65b14c57A1A5AE5ca494b88cC`
+- FELT `0x03b9d039e4a9de5c89c43b5917a39daacedea391` — the launched token. Name `Covenant Floor(FELT)`, symbol `FELT`, 18 decimals. No drip and no burn function.
+- Floor `0x828D84Ec3Ca9B307be03aD1658a6D98Bf2C4c269`. The earlier floor and the earlier token are not used. The house bank starts at 0.
 
 On the contract, and wired to the wallet:
 
-- Deposit, withdraw, one-time 10,000 FELT drip
+- Deposit and withdraw. The vault is credited with the amount the contract actually receives.
 - Dice, roulette, slots, plinko
 - Lottery: pay a scroll, burn a scroll, draw
 - Pay desk: post, submit, pay, return with a reason, silence after 48 hours, cancel

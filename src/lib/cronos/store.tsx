@@ -5,7 +5,7 @@ function reducer(state: State, action: Action): State {
   return reduce(state, action);
 }
 
-const KEY = "covenant-cronos-v5";
+const KEY = "covenant-cronos-v6";
 
 type Api = {
   state: State;

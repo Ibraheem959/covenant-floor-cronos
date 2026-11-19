@@ -4,7 +4,7 @@ import { Area, Field, Go, Picks, Stage, Stat } from "@/components/cronos/bits";
 import { PickPage, BaccaratPage, BjPage, DicePage, DuelPage, HiloPage, KenoPage, LotteryPage, MinesPage, PlinkoPage, PokerPage, RoulettePage, SlotsPage, TablePage } from "@/components/cronos/tables";
 import { FloorProvider, useFloor } from "@/lib/cronos/store";
 import { FLOOR, OWNERS } from "@/lib/cronos/addresses";
-import { approveHouse, cancelJob, chainBalances, claimDrip, depositFelt, payJob, postJob, proposeHouse, readDesk, rejectHouse, returnJob, sendHouse, sendWork, silenceJob, withdrawFelt, type ChainJob, type ChainProposal } from "@/lib/cronos/chain";
+import { approveHouse, cancelJob, chainBalances, depositFelt, fundHouse, payJob, postJob, proposeHouse, readDesk, rejectHouse, returnJob, sendHouse, sendWork, silenceJob, withdrawFelt, type ChainJob, type ChainProposal } from "@/lib/cronos/chain";
 import {
   FAITH_MIN,
   formatCro,
@@ -462,7 +462,6 @@ function WalletPage() {
       </div>
       <Field label="Amount · FELT" value={amount} onChange={setAmount} />
       <div className="flex flex-wrap gap-2">
-        {live ? <Go disabled={busy} onClick={() => void run(async () => { await claimDrip(); await refresh(); })}>Claim 10,000 FELT</Go> : null}
         <Go disabled={busy} onClick={() => void run(async () => {
           if (!live) throw new Error("Connect a Cronos wallet.");
           await depositFelt(parseFelt(amount));
@@ -558,9 +557,10 @@ function PilgrimPage() {
 }
 
 function HousePage() {
-  const { state, run, busy, local, live } = useForm();
+  const { state, run, busy, local, live, refresh } = useForm();
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("1000");
+  const [fund, setFund] = useState("");
   const [proposal, setProposal] = useState<ChainProposal | null>(null);
   const owner = live && OWNERS.some((addr) => addr.toLowerCase() === state.address.toLowerCase());
   useEffect(() => {
@@ -577,7 +577,13 @@ function HousePage() {
         <Stat label="Staker pot" value={`${formatFelt(state.chainStakers)} FELT`} />
         <Stat label="Burned" value={`${formatFelt(state.chainBurned)} FELT`} />
       </div>
-      <p className="text-sm text-muted">A withdrawal needs two of the three owners. It comes out of the house bank only.</p>
+      <p className="text-sm text-muted">A withdrawal needs two of the three owners. It comes out of the house bank only. Winners are paid from this bank, and it is empty until FELT is added.</p>
+      <Field label="Add to the house · FELT" value={fund} onChange={setFund} hint="Taken from the connected wallet." />
+      <Go disabled={busy} onClick={() => void run(async () => {
+        if (!live) throw new Error("Connect a Cronos wallet.");
+        await fundHouse(parseFelt(fund));
+        await refresh();
+      })}>Add to the house</Go>
       {owner ? (
         <>
           <Field label="Destination" value={to} onChange={setTo} />
