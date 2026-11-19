@@ -1,0 +1,26 @@
+name: Announce Cronos floor
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/cache@v4
+        with:
+          path: bot/data
+          key: cronos-announcer-${{ github.run_id }}
+          restore-keys: |
+            cronos-announcer-
+      - name: Post settled rounds
+        run: node bot/cronos.mjs
+        env:
+          CRONOS_ONCE: "1"
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
