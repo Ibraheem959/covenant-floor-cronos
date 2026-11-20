@@ -358,9 +358,17 @@ async function floorWord(selector) {
   return BigInt(raw);
 }
 
-async function commands() {
+async function commands(timeout = 0) {
   if (!TOKEN || !CHAT) return;
-  const response = await fetch(`https://api.telegram.org/bot${TOKEN}/getUpdates?offset=${state.updateId + 1}&timeout=0&allowed_updates=${encodeURIComponent('["message","channel_post"]')}`);
+  const response = await fetch(`https://api.telegram.org/bot${TOKEN}/getUpdates`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      offset: state.updateId + 1,
+      timeout,
+      allowed_updates: ["message", "channel_post"],
+    }),
+  });
   const payload = await response.json();
   if (!payload.ok) {
     console.error("telegram commands", payload.description || "getUpdates failed");
@@ -399,7 +407,18 @@ async function tick() {
 export async function runOnce() {
   if (!TOKEN || !CHAT) throw new Error("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required.");
   await load();
-  await tick();
+  const stop = Date.now() + 270_000;
+  while (Date.now() < stop) {
+    try {
+      await commands(20);
+      await scan();
+      await roll();
+      await save();
+    } catch (error) {
+      console.error("cronos", error.message);
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+  }
   console.log(`Cronos announcer checked through block ${state.block}`);
 }
 
