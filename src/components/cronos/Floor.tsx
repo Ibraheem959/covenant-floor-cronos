@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { Menu, Wallet, X } from "lucide-react";
 import { Area, Field, Go, Picks, Stage, Stat } from "@/components/cronos/bits";
+import { Lobby } from "@/components/cronos/stage";
 import { PickPage, BaccaratPage, BjPage, DicePage, DuelPage, HiloPage, KenoPage, LotteryPage, MinesPage, PlinkoPage, PokerPage, RoulettePage, SlotsPage, TablePage } from "@/components/cronos/tables";
 import { FloorProvider, useFloor } from "@/lib/cronos/store";
 import { FLOOR, OWNERS } from "@/lib/cronos/addresses";
@@ -15,6 +16,7 @@ import {
 } from "@/lib/cronos/logic";
 
 const NAV = [
+  ["floor", "Floor"],
   ["lottery", "Lottery"],
   ["desk", "Pay desk"],
   ["competition", "Competition"],
@@ -40,7 +42,8 @@ const NAV = [
 type PageId = (typeof NAV)[number][0];
 
 const COPY: Record<PageId, { eyebrow: string; title: string; copy: string }> = {
-  lottery: { eyebrow: "Shared pool", title: "The Lottery", copy: "One scroll is 1,000 FELT from the wallet. Paid scrolls fill the pot. Burned scrolls are destroyed and still count. The draw pays 90%. 10% carries." },
+  floor: { eyebrow: "Cronos · chain 25", title: "Covenant Floor", copy: "You are on the FELT floor. A wager leaves your vault. A win is paid back into it from the house. The tables below are the ways in." },
+  lottery: { eyebrow: "One pot", title: "Lottery", copy: "A scroll is 1,000 FELT. Pay it into the pot, or burn it and still hold a ticket. The draw pays 90%." },
   desk: { eyebrow: "Work · not a bet", title: "Pay desk", copy: "Lock FELT from your vault on a brief. The first other seat to submit can be paid. You have 48 hours to pay them or send it back with a reason. Silence pays the worker." },
   competition: { eyebrow: "Play any game", title: "Competition", copy: "A timed race. The prize is locked before the first bet. The seat that comes out ahead by the most FELT takes it. A tie goes to more winning rounds." },
   dice: { eyebrow: "Two dice", title: "Dice", copy: "Under 7 and over 7 pay 2.30×. Exact 7 pays 5.76×. An exact sum pays 36× at 96%, split by the number of ways." },
@@ -70,9 +73,23 @@ export function Floor() {
   );
 }
 
+function isCronos(chain: unknown) {
+  const text = String(chain ?? "").trim().toLowerCase();
+  const id = text.startsWith("0x") ? Number.parseInt(text, 16) : Number(text);
+  return id === 25;
+}
+
+function explain(error: unknown) {
+  const any = error as Error & { shortMessage?: string; reason?: string };
+  const text = error instanceof Error ? any.reason || any.shortMessage || any.message : "The wallet refused that.";
+  if (/allowance/i.test(text)) return "The house is not approved to take that FELT yet. Confirm the approval, then add it again.";
+  if (/max wallet|max tx|limit/i.test(text)) return "That amount is above the token limit. One add can be 55,000,000 FELT, and the house can hold 50,000,000.";
+  return text;
+}
+
 function Shell() {
   const { state, send } = useFloor();
-  const [page, setPage] = useState<PageId>("lottery");
+  const [page, setPage] = useState<PageId>("floor");
   const [open, setOpen] = useState(false);
   const [walletNote, setWalletNote] = useState("");
   const copy = COPY[page];
@@ -124,20 +141,33 @@ function Shell() {
           });
         } else throw error;
       }
+      try {
+        await eth.request({ method: "wallet_requestPermissions", params: [{ eth_accounts: {} }] });
+      } catch (error) {
+        const code = (error as { code?: number }).code;
+        if (code === 4001) throw error;
+      }
       const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
-      const chain = (await eth.request({ method: "eth_chainId" })) as string;
-      send({ type: "wallet", address: accounts[0] ?? "", chainOk: chain.toLowerCase() === "0x19" });
-      setWalletNote(chain.toLowerCase() === "0x19" ? "" : "Switch the wallet to Cronos.");
+      const chain = await eth.request({ method: "eth_chainId" });
+      forgotten.current = false;
+      send({ type: "wallet", address: accounts[0] ?? "", chainOk: isCronos(chain) });
+      setWalletNote(isCronos(chain) ? "" : "Switch the wallet to Cronos.");
     } catch (error) {
       setWalletNote(error instanceof Error ? error.message : "The wallet did not connect.");
     }
   }
 
-  function disconnect() {
+  async function disconnect() {
+    forgotten.current = true;
     send({ type: "wallet", address: "", chainOk: false });
     setWalletNote("");
+    setPage((current) => (current === "house" ? "floor" : current));
     const eth = (window as Window & { ethereum?: Eth }).ethereum;
-    void eth?.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] }).catch(() => undefined);
+    try {
+      await eth?.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] });
+    } catch {
+      /* this wallet has no permission revoke */
+    }
   }
 
   useEffect(() => {
@@ -145,17 +175,26 @@ function Shell() {
     if (!eth?.on) return;
     const onAccounts = (accounts: unknown) => {
       const list = Array.isArray(accounts) ? accounts.map(String) : [];
+      if (forgotten.current) return;
       if (list.length === 0) {
         send({ type: "wallet", address: "", chainOk: false });
         return;
       }
       void eth.request({ method: "eth_chainId" }).then((chain) => {
-        send({ type: "wallet", address: list[0] ?? "", chainOk: String(chain).toLowerCase() === "0x19" });
+        if (forgotten.current) return;
+        send({ type: "wallet", address: list[0] ?? "", chainOk: isCronos(chain) });
       }).catch(() => undefined);
     };
     eth.on("accountsChanged", onAccounts);
     return () => eth.removeListener?.("accountsChanged", onAccounts);
   }, [send]);
+
+  const forgotten = useRef(true);
+  const signerIndex = OWNERS.findIndex((addr) => addr.toLowerCase() === state.address.toLowerCase());
+  const signer = signerIndex >= 0;
+  useEffect(() => {
+    if (page === "house" && !signer) setPage("floor");
+  }, [page, signer]);
 
   const bank = state.chainBank;
   const burned = state.chainBurned;
@@ -169,7 +208,7 @@ function Shell() {
         <aside className="app-sidebar hidden w-[224px] shrink-0 flex-col border-r border-line px-4 py-5 lg:flex">
           <Brand />
           <div className="mt-6 px-3 text-[10px] font-extrabold tracking-[.22em] text-muted uppercase">Play</div>
-          <Nav page={page} onPick={setPage} />
+          <Nav page={page} signer={signer} onPick={setPage} />
           <p className="mt-4 border-t border-line px-3 pt-4 text-xs text-muted">Cronos · chain 25 · FELT</p>
         </aside>
         <main className="floor-main min-w-0 flex-1">
@@ -187,8 +226,9 @@ function Shell() {
             <div className="flex shrink-0 items-center gap-2">
               {state.address ? (
                 <>
+                  {signer ? <span className="rounded-full border border-gold/50 px-2 py-1 text-[10px] font-bold tracking-[.14em] text-gold uppercase">Signer {signerIndex + 1}</span> : null}
                   <span className="hidden font-mono text-xs text-muted sm:inline">{short(state.address)}</span>
-                  <button type="button" onClick={disconnect} className="disconnect-button">Disconnect</button>
+                  <button type="button" onClick={() => void disconnect()} className="disconnect-button">Disconnect</button>
                 </>
               ) : (
                 <button type="button" onClick={() => void connect()} className="wallet-button">
@@ -200,7 +240,7 @@ function Shell() {
           </header>
           {open ? (
             <div className="nav-drawer lg:hidden">
-              <Nav page={page} onPick={(id) => { setPage(id); setOpen(false); }} />
+              <Nav page={page} signer={signer} onPick={(id) => { setPage(id); setOpen(false); }} />
             </div>
           ) : null}
           <div className="floor-body mx-auto w-full max-w-[1480px]">
@@ -270,10 +310,26 @@ function Brand({ compact = false }: { compact?: boolean }) {
   );
 }
 
-function Nav({ page, onPick }: { page: PageId; onPick: (id: PageId) => void }) {
+function FloorHome() {
+  const { state } = useFloor();
+  const open = useContext(PickPage);
+  return (
+    <div className="grid gap-4">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Stat label="Wallet" value={state.address ? `${formatFelt(state.chainWallet)} FELT` : "Not connected"} />
+        <Stat label="Vault" value={state.address ? `${formatFelt(state.chainVault)} FELT` : "—"} />
+        <Stat label="House" value={`${formatFelt(state.chainBank)} FELT`} />
+      </div>
+      <Lobby onOpen={open} />
+    </div>
+  );
+}
+
+function Nav({ page, signer, onPick }: { page: PageId; signer: boolean; onPick: (id: PageId) => void }) {
+  const items = NAV.filter(([id]) => id !== "house" || signer);
   return (
     <nav className="mt-3 grid grid-cols-2 gap-1 lg:grid-cols-1">
-      {NAV.map(([id, label], index) => (
+      {items.map(([id, label], index) => (
         <button key={id} type="button" onClick={() => onPick(id)} className={`nav-link ${page === id ? "nav-link-active" : ""}`}>
           <span className="nav-index">{String(index + 1).padStart(2, "0")}</span>
           <span>{label}</span>
@@ -295,6 +351,7 @@ function RailRow({ label, value, hot }: { label: string; value: string; hot?: bo
 
 const TABLE_PAGES = new Set(["dice", "roulette", "slots", "plinko", "keno", "baccarat", "hi-lo", "mines", "blackjack", "poker", "duel", "table"]);
 function Body({ page }: { page: PageId }) {
+  if (page === "floor") return <FloorHome />;
   if (page === "lottery") return <LotteryPage />;
   if (page === "desk") return <DeskPage />;
   if (page === "competition") return <RacePage />;
@@ -331,7 +388,7 @@ function useForm() {
       setBusy(true);
       await task();
     } catch (error) {
-      setLocal(error instanceof Error ? error.message : "The wallet refused that.");
+      setLocal(explain(error));
     } finally {
       setBusy(false);
     }
@@ -560,9 +617,10 @@ function HousePage() {
   const { state, run, busy, local, live, refresh } = useForm();
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("1000");
-  const [fund, setFund] = useState("");
+  const [fund, setFund] = useState("1000");
   const [proposal, setProposal] = useState<ChainProposal | null>(null);
-  const owner = live && OWNERS.some((addr) => addr.toLowerCase() === state.address.toLowerCase());
+  const signerIndex = OWNERS.findIndex((addr) => addr.toLowerCase() === state.address.toLowerCase());
+  const signer = signerIndex >= 0;
   useEffect(() => {
     let stop = false;
     void readDesk(state.address).then((row) => {
@@ -577,14 +635,16 @@ function HousePage() {
         <Stat label="Staker pot" value={`${formatFelt(state.chainStakers)} FELT`} />
         <Stat label="Burned" value={`${formatFelt(state.chainBurned)} FELT`} />
       </div>
-      <p className="text-sm text-muted">A withdrawal needs two of the three owners. It comes out of the house bank only. Winners are paid from this bank, and it is empty until FELT is added.</p>
-      <Field label="Add to the house · FELT" value={fund} onChange={setFund} hint="Taken from the connected wallet." />
-      <Go disabled={busy} onClick={() => void run(async () => {
-        if (!live) throw new Error("Connect a Cronos wallet.");
+      <p className="rounded-2xl border border-gold/40 bg-gold/10 px-4 py-3 text-sm">Signer wallet {signerIndex + 1} of 3. {short(state.address)}. Two signers approve a withdrawal. Adding FELT asks the wallet to approve the token, then sends it into the house.</p>
+      <Field label="Add to the house · FELT" value={fund} onChange={setFund} hint="50,000,000 is the most this token lets the house hold." />
+      <Go disabled={busy || !signer} onClick={() => void run(async () => {
+        if (!signer) throw new Error("Connect a signer wallet.");
+        if (!live) throw new Error("Switch the signer wallet to Cronos.");
         await fundHouse(parseFelt(fund));
         await refresh();
+        setFund("1000");
       })}>Add to the house</Go>
-      {owner ? (
+      {signer ? (
         <>
           <Field label="Destination" value={to} onChange={setTo} />
           <Field label="Amount · FELT" value={amount} onChange={setAmount} />

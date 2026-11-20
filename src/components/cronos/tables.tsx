@@ -1,11 +1,10 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { Cards } from "@/components/cronos/bits";
+import { createContext, useEffect, useState, type ReactNode } from "react";
+import { Cards, Stat } from "@/components/cronos/bits";
 import {
   BaccaratStage,
   DiceStage,
   HiloStage,
   KenoStage,
-  Lobby,
   LotteryVisual,
   MineStage,
   PlinkoStage,
@@ -500,7 +499,6 @@ export function TablePage() {
 
 export function LotteryPage() {
   const play = usePlay();
-  const open = useContext(PickPage);
   const [n, setN] = useState("1");
   const [chain, setChain] = useState({ pot: 0n, round: 1n, mine: 0n });
   useEffect(() => {
@@ -514,14 +512,11 @@ export function LotteryPage() {
   const pot = play.live ? chain.pot : play.state.pot;
   return (
     <div className="grid gap-4">
-      <div className="rule-card">
-        <div className="rule-mark">01</div>
-        <div>
-          <strong>Draw pays 90% · 10% carries</strong>
-          <p>One scroll is 1,000 FELT. Paying fills the pot. Burning still enters the draw.</p>
-        </div>
-      </div>
       <LotteryVisual round={round} pot={`${formatFelt(pot)} FELT`} />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Stat label="Your scrolls" value={play.live ? chain.mine.toString() : play.state.totalTickets.toString()} />
+        <Stat label="Round" value={round} />
+      </div>
       <div className="game-action-grid">
         <Move label="Pay into pot" busy={play.busy} onSubmit={() => void play.play(() => ({ type: "scroll-pay", n: Number(n) }), () => buyScrolls(Number(n)), 280)}>
           <Amount label="Scrolls" value={n} onChange={setN} />
@@ -530,8 +525,6 @@ export function LotteryPage() {
         <Move label="Draw" busy={play.busy} onSubmit={() => void play.play(() => ({ type: "draw" }), () => drawLottery(), 280)} />
       </div>
       <Fault text={play.local} />
-      <p className="text-sm text-muted">{play.live ? `Your scrolls this round: ${chain.mine.toString()}.` : `Scrolls on this table: ${play.state.totalTickets}.`}</p>
-      <Lobby onOpen={open} />
     </div>
   );
 }

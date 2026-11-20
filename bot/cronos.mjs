@@ -7,11 +7,19 @@ const RPC = process.env.CRONOS_RPC || "https://evm.cronos.org";
 const FLOOR = "0x828D84Ec3Ca9B307be03aD1658a6D98Bf2C4c269";
 const PLAY_TOPIC = "0x4604e1e6dd5abe456f081d0d88cd87f05afbfe4e9bd011b3654ff470d7e74e33";
 const HOUSE_TOPIC = "0x53830f159a54d10c11bc5258401539181cd3ba65e8881a5de719af03470f087d";
+const FELT_TOKEN = "0x03b9d039e4a9de5c89c43b5917a39daacedea391";
+const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+const CALLS = {
+  "0x251affd3": "seal",
+  "0x800d3b12": "burn",
+  "0x0eecae21": "draw",
+  "0x4a951d8d": "settle",
+  "0x8746cf98": "fund",
+};
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
 const CHAT = (process.env.TELEGRAM_CHAT_ID ?? "").trim();
 const DATA = path.join(path.dirname(fileURLToPath(import.meta.url)), "data");
 const STATE_FILE = path.join(DATA, "cronos.json");
-const SUPRA_STATE = path.join(DATA, "state.json");
 const RULE = "━━━━━━━━━━━━━━━━━";
 const LABELS = {
   dice: "DICE",
@@ -99,48 +107,20 @@ function dayKey(date = new Date()) {
   return date.toISOString().slice(0, 10);
 }
 
-async function threadId() {
-  const pinned = Number(process.env.TELEGRAM_THREAD_ID || 0);
-  if (pinned > 1) return pinned;
-  try {
-    const saved = JSON.parse(await readFile(SUPRA_STATE, "utf8"));
-    const id = Number(saved.threadId || 0);
-    if (id > 1) return id;
-  } catch {
-    return 0;
-  }
-  return 0;
-}
-
 async function say(text) {
   if (!TOKEN || !CHAT) return;
-  const body = {
-    chat_id: CHAT,
-    text,
-    parse_mode: "HTML",
-    disable_web_page_preview: true,
-  };
-  const thread = await threadId();
-  if (thread > 1) body.message_thread_id = thread;
   const response = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      chat_id: CHAT,
+      text,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    }),
   });
   const payload = await response.json();
-  if (payload.ok) return;
-  if (thread > 1 && /thread|topic/i.test(payload.description || "")) {
-    delete body.message_thread_id;
-    const again = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const second = await again.json();
-    if (!second.ok) throw new Error(second.description || "Telegram send failed");
-    return;
-  }
-  throw new Error(payload.description || "Telegram send failed");
+  if (!payload.ok) throw new Error(payload.description || "Telegram send failed");
 }
 
 function addRound(bucket, row) {
@@ -271,12 +251,62 @@ async function announce(log) {
   await say(playText(row));
 }
 
+function arg(input) {
+  const hex = String(input || "").slice(10, 74);
+  return hex ? BigInt(`0x${hex}`) : 0n;
+}
+
+async function onFloorTx(tx) {
+  const kind = CALLS[String(tx.input || "").slice(0, 10).toLowerCase()];
+  if (!kind) return;
+  const who = shortAddress(tx.from);
+  if (kind === "seal" || kind === "burn") {
+    const n = arg(tx.input);
+    await say([
+      "<b>FELT</b>",
+      "LOTTERY",
+      RULE,
+      kind === "seal" ? `Paid ${n.toString()} scroll${n === 1n ? "" : "s"} into the pot.` : `Burned ${n.toString()} scroll${n === 1n ? "" : "s"}. They still enter the draw.`,
+      who,
+      "Cronos · covenantfelt.xyz",
+    ].join("\n"));
+    return;
+  }
+  if (kind === "draw") {
+    await say(["<b>FELT</b>", "LOTTERY", RULE, "The draw is locked. It settles on the next block.", who, "Cronos · covenantfelt.xyz"].join("\n"));
+    return;
+  }
+  if (kind === "fund") {
+    await say(["<b>FELT</b>", "HOUSE BANK", RULE, `${feltLine(arg(tx.input))} added to the house bank.`, who, "Cronos · covenantfelt.xyz"].join("\n"));
+    return;
+  }
+  const receipt = await rpc("eth_getTransactionReceipt", [tx.hash]);
+  let paid = 0n;
+  let winner = "";
+  for (const log of receipt?.logs || []) {
+    if (String(log.address).toLowerCase() !== FELT_TOKEN.toLowerCase() || log.topics?.[0] !== TRANSFER_TOPIC) continue;
+    const from = `0x${String(log.topics[1] || "").slice(26)}`.toLowerCase();
+    if (from !== FLOOR.toLowerCase()) continue;
+    paid = BigInt(log.data);
+    winner = `0x${String(log.topics[2] || "").slice(26)}`;
+  }
+  await say([
+    "<b>FELT</b>",
+    "LOTTERY",
+    RULE,
+    paid > 0n ? `<b>${feltLine(paid)} drawn</b>` : "The draw paid nothing.",
+    paid > 0n ? `Winner ${shortAddress(winner)}` : "No ticket was paid.",
+    "90% left the pot. 10% stayed.",
+    "Cronos · covenantfelt.xyz",
+  ].filter(Boolean).join("\n"));
+}
+
 async function scan() {
   const tip = Number(await rpc("eth_blockNumber", []));
-  if (!state.block) state.block = tip;
+  if (!state.block || state.block > tip) state.block = tip;
   let from = state.block + 1;
   while (from <= tip) {
-    const to = Math.min(tip, from + 1999);
+    const to = Math.min(tip, from + 199);
     const logs = await rpc("eth_getLogs", [{
       address: FLOOR,
       fromBlock: `0x${from.toString(16)}`,
@@ -284,6 +314,13 @@ async function scan() {
       topics: [[PLAY_TOPIC, HOUSE_TOPIC]],
     }]);
     for (const log of logs) await announce(log);
+    for (let n = from; n <= to; n += 1) {
+      const block = await rpc("eth_getBlockByNumber", [`0x${n.toString(16)}`, true]);
+      for (const tx of block?.transactions || []) {
+        if (String(tx.to || "").toLowerCase() !== FLOOR.toLowerCase()) continue;
+        await onFloorTx(tx);
+      }
+    }
     state.block = to;
     from = to + 1;
   }
