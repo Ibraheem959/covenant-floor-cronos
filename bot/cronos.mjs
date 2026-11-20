@@ -17,7 +17,7 @@ const CALLS = {
   "0x8746cf98": "fund",
 };
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
-const CHAT = (process.env.TELEGRAM_CHAT_ID ?? "").trim();
+const CHAT = (process.env.TELEGRAM_CHAT_ID || "-1004335685999").trim();
 const DATA = path.join(path.dirname(fileURLToPath(import.meta.url)), "data");
 const STATE_FILE = path.join(DATA, "cronos.json");
 const RULE = "━━━━━━━━━━━━━━━━━";
@@ -33,7 +33,7 @@ const LABELS = {
 };
 
 let started = false;
-let state = { block: 0, hourKey: "", dayKey: "", hour: emptyBucket(), day: emptyBucket() };
+let state = { block: 0, updateId: 0, hourKey: "", dayKey: "", hour: emptyBucket(), day: emptyBucket() };
 
 function emptyBucket() {
   return { rounds: 0, wagered: 0n, paid: 0n, loss: 0n, biggest: null };
@@ -107,17 +107,19 @@ function dayKey(date = new Date()) {
   return date.toISOString().slice(0, 10);
 }
 
-async function say(text) {
+async function say(text, replyTo = 0) {
   if (!TOKEN || !CHAT) return;
+  const body = {
+    chat_id: CHAT,
+    text,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  };
+  if (replyTo) body.reply_to_message_id = replyTo;
   const response = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      chat_id: CHAT,
-      text,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    }),
+    body: JSON.stringify(body),
   });
   const payload = await response.json();
   if (!payload.ok) throw new Error(payload.description || "Telegram send failed");
@@ -207,6 +209,7 @@ async function load() {
     const parsed = JSON.parse(await readFile(STATE_FILE, "utf8"));
     state = {
       block: Number(parsed.block || 0),
+      updateId: Number(parsed.updateId || 0),
       hourKey: parsed.hourKey || "",
       dayKey: parsed.dayKey || "",
       hour: loadBucket(parsed.hour),
@@ -223,6 +226,7 @@ async function save() {
   await mkdir(DATA, { recursive: true });
   await writeFile(STATE_FILE, JSON.stringify({
     block: state.block,
+    updateId: state.updateId,
     hourKey: state.hourKey,
     dayKey: state.dayKey,
     hour: dumpBucket(state.hour),
@@ -341,9 +345,47 @@ async function roll() {
   }
 }
 
+async function floorWord(selector) {
+  const raw = await rpc("eth_call", [{ to: FLOOR, data: selector }, "latest"]);
+  if (!raw || raw === "0x") return 0n;
+  return BigInt(raw);
+}
+
+async function commands() {
+  if (!TOKEN || !CHAT) return;
+  const response = await fetch(`https://api.telegram.org/bot${TOKEN}/getUpdates?offset=${state.updateId + 1}&timeout=0&allowed_updates=${encodeURIComponent('["message","channel_post"]')}`);
+  const payload = await response.json();
+  if (!payload.ok) {
+    console.error("telegram commands", payload.description || "getUpdates failed");
+    return;
+  }
+  for (const update of payload.result || []) {
+    state.updateId = update.update_id;
+    const message = update.message || update.channel_post;
+    if (!message?.text || String(message.chat?.id) !== CHAT) continue;
+    const command = String(message.text).trim().split(/\s+/)[0].split("@")[0].toLowerCase();
+    if (!["/report", "/floor", "/start", "/help"].includes(command)) continue;
+    const [bank, burned, stakers, pot, buyback] = await Promise.all([
+      floorWord("0x76cdb03b"),
+      floorWord("0x73f42561"),
+      floorWord("0xfed1252a"),
+      floorWord("0x4ba2363a"),
+      floorWord("0x39a704dc"),
+    ]);
+    const hour = report("THIS HOUR", state.hour);
+    const text = command === "/report"
+      ? hour
+      : command === "/floor"
+        ? ["<b>FELT</b>", "CRONOS FLOOR", RULE, `House: ${feltLine(bank)}`, `Burned: ${feltLine(burned)}`, `Buyback: ${feltLine(buyback)}`, `Stakers: ${feltLine(stakers)}`, `Lottery pot: ${feltLine(pot)}`, "Cronos · covenantfelt.xyz"].join("\n")
+        : ["<b>FELT</b>", "Fair Entry. Locked Together.", RULE, "Wins, losses, and the house post here.", "/floor shows the Cronos bank.", "/report shows this hour.", "covenantfelt.xyz"].join("\n");
+    await say(text, message.message_id);
+  }
+}
+
 async function tick() {
   await scan();
   await roll();
+  await commands();
   await save();
 }
 

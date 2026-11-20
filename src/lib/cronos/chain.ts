@@ -68,23 +68,45 @@ export type ChainJob = {
 
 export type ChainProposal = { to: string; amount: bigint; open: boolean };
 
-type Eth = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
+type Eth = {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  on?: (event: string, fn: (...args: unknown[]) => void) => void;
+  removeListener?: (event: string, fn: (...args: unknown[]) => void) => void;
+};
+
+let activeWallet: Eth | null = null;
+
+export function setActiveWallet(provider: Eth | null) {
+  activeWallet = provider;
+}
 
 function ethereum(): Eth {
-  const eth = (window as Window & { ethereum?: Eth }).ethereum;
-  if (!eth) throw new Error("No Cronos wallet is available in this browser.");
-  return eth;
+  if (!activeWallet) throw new Error("Choose a wallet. Disconnect does not keep the last one.");
+  return activeWallet;
+}
+
+function isCronos(chain: unknown) {
+  const text = String(chain ?? "").trim().toLowerCase();
+  const id = text.startsWith("0x") ? Number.parseInt(text, 16) : Number(text);
+  return id === 25;
 }
 
 async function signer() {
-  const provider = new BrowserProvider(ethereum());
-  const network = await provider.getNetwork();
-  if (Number(network.chainId) !== 25) throw new Error("Switch the wallet to Cronos, chain 25.");
+  const eth = ethereum();
+  const chain = await eth.request({ method: "eth_chainId" });
+  if (!isCronos(chain)) throw new Error("Switch the wallet to Cronos, chain 25.");
+  const provider = new BrowserProvider(eth, 25);
   return provider.getSigner();
 }
 
 async function sent(tx: Promise<{ wait: () => Promise<TransactionReceipt | null> }>): Promise<TransactionReceipt> {
-  const receipt = await (await tx).wait();
+  const sentTx = await Promise.race([
+    tx,
+    new Promise<never>((_, reject) => {
+      window.setTimeout(() => reject(new Error("The wallet did not open. Unlock it and try Add to the house again.")), 90_000);
+    }),
+  ]);
+  const receipt = await sentTx.wait();
   if (!receipt || receipt.status !== 1) throw new Error("The transaction failed.");
   return receipt;
 }
@@ -163,9 +185,12 @@ export async function readDesk(address = "") {
 async function allow(amount: bigint) {
   const account = await signer();
   const me = await account.getAddress();
-  const felt = new Contract(FELT, feltAbi, account);
-  const allowance = (await felt.allowance(me, FLOOR)) as bigint;
-  if (allowance < amount) await sent(felt.approve(FLOOR, MaxUint256));
+  const feltRead = new Contract(FELT, feltAbi, reader());
+  const allowance = (await feltRead.allowance(me, FLOOR)) as bigint;
+  if (allowance < amount) {
+    const felt = new Contract(FELT, feltAbi, account);
+    await sent(felt.approve(FLOOR, MaxUint256));
+  }
   return account;
 }
 
@@ -184,15 +209,16 @@ export async function withdrawFelt(amount: bigint) {
 async function cover(stake: bigint) {
   const account = await signer();
   const me = await account.getAddress();
-  const felt = new Contract(FELT, feltAbi, account);
-  const floor = new Contract(FLOOR, floorAbi, account);
+  const felt = new Contract(FELT, feltAbi, reader());
+  const floor = new Contract(FLOOR, floorAbi, reader());
   const vault = (await floor.vault(me)) as bigint;
   if (vault >= stake) return me;
   const need = stake - vault;
   const balance = (await felt.balanceOf(me)) as bigint;
   if (balance < need) throw new Error("The vault is empty and this wallet has no FELT to deposit.");
   await allow(need);
-  await sent(floor.deposit(need));
+  const writer = new Contract(FLOOR, floorAbi, account);
+  await sent(writer.deposit(need));
   return me;
 }
 

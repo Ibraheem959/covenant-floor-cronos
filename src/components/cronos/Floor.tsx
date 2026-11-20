@@ -5,7 +5,7 @@ import { Lobby } from "@/components/cronos/stage";
 import { PickPage, BaccaratPage, BjPage, DicePage, DuelPage, HiloPage, KenoPage, LotteryPage, MinesPage, PlinkoPage, PokerPage, RoulettePage, SlotsPage, TablePage } from "@/components/cronos/tables";
 import { FloorProvider, useFloor } from "@/lib/cronos/store";
 import { FLOOR, OWNERS } from "@/lib/cronos/addresses";
-import { approveHouse, cancelJob, chainBalances, depositFelt, fundHouse, payJob, postJob, proposeHouse, readDesk, rejectHouse, returnJob, sendHouse, sendWork, silenceJob, withdrawFelt, type ChainJob, type ChainProposal } from "@/lib/cronos/chain";
+import { approveHouse, cancelJob, chainBalances, depositFelt, fundHouse, payJob, postJob, proposeHouse, readDesk, rejectHouse, returnJob, sendHouse, sendWork, setActiveWallet, silenceJob, withdrawFelt, type ChainJob, type ChainProposal } from "@/lib/cronos/chain";
 import {
   FAITH_MIN,
   formatCro,
@@ -92,6 +92,9 @@ function Shell() {
   const [page, setPage] = useState<PageId>("floor");
   const [open, setOpen] = useState(false);
   const [walletNote, setWalletNote] = useState("");
+  const [choices, setChoices] = useState<WalletChoice[] | null>(null);
+  const chosen = useRef<Eth | null>(null);
+  const unlisten = useRef<(() => void) | null>(null);
   const copy = COPY[page];
   const shownVault = state.address ? state.chainVault : 0n;
 
@@ -114,65 +117,8 @@ function Shell() {
     };
   }, [send, state.address]);
 
-  async function connect() {
-    setWalletNote("");
-    const eth = (window as Window & { ethereum?: Eth }).ethereum;
-    if (!eth) {
-      setWalletNote("No Cronos wallet in this browser.");
-      return;
-    }
-    try {
-      try {
-        await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x19" }] });
-      } catch (error) {
-        const code = (error as { code?: number }).code;
-        if (code === 4902) {
-          await eth.request({
-            method: "wallet_addEthereumChain",
-            params: [
-              {
-                chainId: "0x19",
-                chainName: "Cronos",
-                nativeCurrency: { name: "CRO", symbol: "CRO", decimals: 18 },
-                rpcUrls: ["https://evm.cronos.org"],
-                blockExplorerUrls: ["https://cronoscan.com"],
-              },
-            ],
-          });
-        } else throw error;
-      }
-      try {
-        await eth.request({ method: "wallet_requestPermissions", params: [{ eth_accounts: {} }] });
-      } catch (error) {
-        const code = (error as { code?: number }).code;
-        if (code === 4001) throw error;
-      }
-      const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
-      const chain = await eth.request({ method: "eth_chainId" });
-      forgotten.current = false;
-      send({ type: "wallet", address: accounts[0] ?? "", chainOk: isCronos(chain) });
-      setWalletNote(isCronos(chain) ? "" : "Switch the wallet to Cronos.");
-    } catch (error) {
-      setWalletNote(error instanceof Error ? error.message : "The wallet did not connect.");
-    }
-  }
-
-  async function disconnect() {
-    forgotten.current = true;
-    send({ type: "wallet", address: "", chainOk: false });
-    setWalletNote("");
-    setPage((current) => (current === "house" ? "floor" : current));
-    const eth = (window as Window & { ethereum?: Eth }).ethereum;
-    try {
-      await eth?.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] });
-    } catch {
-      /* this wallet has no permission revoke */
-    }
-  }
-
-  useEffect(() => {
-    const eth = (window as Window & { ethereum?: Eth & { on?: (event: string, fn: (...args: unknown[]) => void) => void; removeListener?: (event: string, fn: (...args: unknown[]) => void) => void } }).ethereum;
-    if (!eth?.on) return;
+  function watch(eth: Eth) {
+    unlisten.current?.();
     const onAccounts = (accounts: unknown) => {
       const list = Array.isArray(accounts) ? accounts.map(String) : [];
       if (forgotten.current) return;
@@ -185,9 +131,55 @@ function Shell() {
         send({ type: "wallet", address: list[0] ?? "", chainOk: isCronos(chain) });
       }).catch(() => undefined);
     };
-    eth.on("accountsChanged", onAccounts);
-    return () => eth.removeListener?.("accountsChanged", onAccounts);
-  }, [send]);
+    eth.on?.("accountsChanged", onAccounts);
+    unlisten.current = () => eth.removeListener?.("accountsChanged", onAccounts);
+  }
+
+  async function connect() {
+    setWalletNote("");
+    const wallets = await discoverWallets();
+    if (!wallets.length) {
+      setWalletNote("No wallet found. Install MetaMask or OKX, then try again.");
+      return;
+    }
+    setChoices(wallets);
+  }
+
+  async function pickWallet(choice: WalletChoice) {
+    setChoices(null);
+    setWalletNote("");
+    chosen.current = choice.provider;
+    setActiveWallet(choice.provider);
+    try {
+      const next = await openWallet(choice.provider);
+      if (!next.address) throw new Error("That wallet did not return an account.");
+      forgotten.current = false;
+      watch(choice.provider);
+      send({ type: "wallet", address: next.address, chainOk: next.chainOk });
+      setWalletNote(next.chainOk ? "" : "Switch the wallet to Cronos.");
+    } catch (error) {
+      chosen.current = null;
+      setActiveWallet(null);
+      setWalletNote(error instanceof Error ? error.message : "The wallet did not connect.");
+    }
+  }
+
+  async function disconnect() {
+    forgotten.current = true;
+    unlisten.current?.();
+    unlisten.current = null;
+    const eth = chosen.current;
+    chosen.current = null;
+    setActiveWallet(null);
+    send({ type: "wallet", address: "", chainOk: false });
+    setWalletNote("");
+    setPage((current) => (current === "house" ? "floor" : current));
+    try {
+      await eth?.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] });
+    } catch {
+      /* this wallet has no permission revoke */
+    }
+  }
 
   const forgotten = useRef(true);
   const signerIndex = OWNERS.findIndex((addr) => addr.toLowerCase() === state.address.toLowerCase());
@@ -238,6 +230,23 @@ function Shell() {
               )}
             </div>
           </header>
+          {walletNote ? <p className="mx-auto w-full max-w-[1480px] px-4 pt-3 text-sm text-wine sm:px-6">{walletNote}</p> : null}
+          {choices ? (
+            <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 px-4" role="dialog" aria-label="Choose a wallet">
+              <div className="grid w-full max-w-sm gap-3 rounded-2xl border border-line bg-panel p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <strong>Choose a wallet</strong>
+                  <button type="button" className="text-sm text-muted" onClick={() => setChoices(null)}>Close</button>
+                </div>
+                {choices.map((choice) => (
+                  <button key={choice.id} type="button" className="flex items-center gap-3 rounded-xl border border-line px-3 py-3 text-left" onClick={() => void pickWallet(choice)}>
+                    {choice.icon ? <img src={choice.icon} alt="" className="h-8 w-8 rounded-lg" /> : <span className="grid h-8 w-8 place-items-center rounded-lg bg-gold/20 text-xs font-bold">{choice.name.slice(0, 1)}</span>}
+                    <span>{choice.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {open ? (
             <div className="nav-drawer lg:hidden">
               <Nav page={page} signer={signer} onPick={(id) => { setPage(id); setOpen(false); }} />
@@ -296,7 +305,74 @@ function Shell() {
 
 type Eth = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  on?: (event: string, fn: (...args: unknown[]) => void) => void;
+  removeListener?: (event: string, fn: (...args: unknown[]) => void) => void;
+  providers?: Eth[];
+  isMetaMask?: boolean;
+  isOkxWallet?: boolean;
+  isRabby?: boolean;
 };
+
+type WalletChoice = { id: string; name: string; icon?: string; provider: Eth };
+
+function walletName(provider: Eth, fallback: string) {
+  if (provider.isOkxWallet) return "OKX Wallet";
+  if (provider.isRabby) return "Rabby";
+  if (provider.isMetaMask) return "MetaMask";
+  return fallback;
+}
+
+function discoverWallets(): Promise<WalletChoice[]> {
+  return new Promise((resolve) => {
+    const found = new Map<string, WalletChoice>();
+    const onAnnounce = (event: Event) => {
+      const detail = (event as CustomEvent<{ info?: { uuid: string; name: string; icon: string }; provider?: Eth }>).detail;
+      if (!detail?.info || !detail.provider) return;
+      found.set(detail.info.uuid, { id: detail.info.uuid, name: detail.info.name, icon: detail.info.icon, provider: detail.provider });
+    };
+    window.addEventListener("eip6963:announceProvider", onAnnounce);
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+    window.setTimeout(() => {
+      window.removeEventListener("eip6963:announceProvider", onAnnounce);
+      const root = window as Window & { ethereum?: Eth; okxwallet?: Eth };
+      const list = Array.isArray(root.ethereum?.providers) ? root.ethereum.providers : [];
+      list.forEach((provider, index) => {
+        const id = `legacy-${index}`;
+        if ([...found.values()].some((item) => item.provider === provider)) return;
+        found.set(id, { id, name: walletName(provider, `Wallet ${index + 1}`), provider });
+      });
+      if (root.okxwallet && ![...found.values()].some((item) => item.provider === root.okxwallet)) {
+        found.set("okx", { id: "okx", name: "OKX Wallet", provider: root.okxwallet });
+      }
+      if (root.ethereum && !list.length && ![...found.values()].some((item) => item.provider === root.ethereum)) {
+        found.set("injected", { id: "injected", name: walletName(root.ethereum, "Browser wallet"), provider: root.ethereum });
+      }
+      resolve([...found.values()]);
+    }, 300);
+  });
+}
+
+async function openWallet(eth: Eth) {
+  try {
+    await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x19" }] });
+  } catch (error) {
+    const code = (error as { code?: number }).code;
+    if (code !== 4902) throw error;
+    await eth.request({
+      method: "wallet_addEthereumChain",
+      params: [{ chainId: "0x19", chainName: "Cronos", nativeCurrency: { name: "CRO", symbol: "CRO", decimals: 18 }, rpcUrls: ["https://evm.cronos.org"], blockExplorerUrls: ["https://cronoscan.com"] }],
+    });
+  }
+  try {
+    await eth.request({ method: "wallet_requestPermissions", params: [{ eth_accounts: {} }] });
+  } catch (error) {
+    const code = (error as { code?: number }).code;
+    if (code === 4001) throw error;
+  }
+  const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
+  const chain = await eth.request({ method: "eth_chainId" });
+  return { address: accounts[0] ?? "", chainOk: isCronos(chain) };
+}
 
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
@@ -635,15 +711,14 @@ function HousePage() {
         <Stat label="Staker pot" value={`${formatFelt(state.chainStakers)} FELT`} />
         <Stat label="Burned" value={`${formatFelt(state.chainBurned)} FELT`} />
       </div>
-      <p className="rounded-2xl border border-gold/40 bg-gold/10 px-4 py-3 text-sm">Signer wallet {signerIndex + 1} of 3. {short(state.address)}. Two signers approve a withdrawal. Adding FELT asks the wallet to approve the token, then sends it into the house.</p>
+      <p className="rounded-2xl border border-gold/40 bg-gold/10 px-4 py-3 text-sm">Signer {signerIndex + 1} of 3 · {short(state.address)}. Add to the house is one signature from this wallet. It does not ask the other signers. Taking FELT out is different: Propose, then Disconnect, connect signer 2 or 3, press Approve, then Send.</p>
       <Field label="Add to the house · FELT" value={fund} onChange={setFund} hint="50,000,000 is the most this token lets the house hold." />
       <Go disabled={busy || !signer} onClick={() => void run(async () => {
         if (!signer) throw new Error("Connect a signer wallet.");
         if (!live) throw new Error("Switch the signer wallet to Cronos.");
         await fundHouse(parseFelt(fund));
         await refresh();
-        setFund("1000");
-      })}>Add to the house</Go>
+      })}>{busy ? "Check the wallet" : "Add to the house"}</Go>
       {signer ? (
         <>
           <Field label="Destination" value={to} onChange={setTo} />
@@ -656,7 +731,7 @@ function HousePage() {
           </div>
         </>
       ) : <p className="text-sm text-muted">Connect an owner wallet to move the bank.</p>}
-      {proposal ? <p className="text-sm">Waiting: {formatFelt(proposal.amount)} FELT to {short(proposal.to)}. A second owner has to approve before it can be sent.</p> : <p className="text-sm text-muted">No withdrawal is waiting.</p>}
+      {proposal ? <p className="text-sm">Waiting: {formatFelt(proposal.amount)} FELT to {short(proposal.to)}. Disconnect, connect a different signer, then press Approve. Send works after two signers have signed.</p> : <p className="text-sm text-muted">No withdrawal is waiting. A second signer is only used for a withdrawal.</p>}
       <Bomb text={local} />
     </div>
   );

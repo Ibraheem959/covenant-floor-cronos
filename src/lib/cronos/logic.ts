@@ -345,7 +345,9 @@ function clone<T>(v: T): T {
 
 export function reduce(state: State, action: Action, now = Date.now()): State {
   try {
-    if (action.type === "hydrate") return action.state;
+    if (action.type === "hydrate") {
+      return { ...action.state, address: "", chainOk: false, chainWallet: 0n, chainVault: 0n, chainCro: 0n };
+    }
     if (action.type === "reset") return initialState();
     const next = clone(state);
     next.error = "";
