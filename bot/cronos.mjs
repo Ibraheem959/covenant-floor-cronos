@@ -15,6 +15,8 @@ const CALLS = {
   "0x0eecae21": "draw",
   "0x4a951d8d": "settle",
   "0x8746cf98": "fund",
+  "0xb6b55f25": "deposit",
+  "0x2e1a7d4d": "withdraw",
 };
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
 const CHAT = (process.env.TELEGRAM_CHAT_ID || "-1004335685999").trim();
@@ -280,8 +282,13 @@ async function onFloorTx(tx) {
     await say(["<b>FELT</b>", "LOTTERY", RULE, "The draw is locked. It settles on the next block.", who, "Cronos · covenantfelt.xyz"].join("\n"));
     return;
   }
-  if (kind === "fund") {
-    await say(["<b>FELT</b>", "HOUSE BANK", RULE, `${feltLine(arg(tx.input))} added to the house bank.`, who, "Cronos · covenantfelt.xyz"].join("\n"));
+  if (kind === "fund" || kind === "deposit" || kind === "withdraw") {
+    const line = kind === "fund"
+      ? `${feltLine(arg(tx.input))} added to the house bank.`
+      : kind === "deposit"
+        ? `${feltLine(arg(tx.input))} deposited to a player vault.`
+        : `${feltLine(arg(tx.input))} withdrawn from a player vault.`;
+    await say(["<b>FELT</b>", kind === "fund" ? "HOUSE BANK" : "VAULT", RULE, line, who, "Cronos · covenantfelt.xyz"].join("\n"));
     return;
   }
   const receipt = await rpc("eth_getTransactionReceipt", [tx.hash]);
@@ -377,7 +384,7 @@ async function commands() {
       ? hour
       : command === "/floor"
         ? ["<b>FELT</b>", "CRONOS FLOOR", RULE, `House: ${feltLine(bank)}`, `Burned: ${feltLine(burned)}`, `Buyback: ${feltLine(buyback)}`, `Stakers: ${feltLine(stakers)}`, `Lottery pot: ${feltLine(pot)}`, "Cronos · covenantfelt.xyz"].join("\n")
-        : ["<b>FELT</b>", "Fair Entry. Locked Together.", RULE, "Wins, losses, and the house post here.", "/floor shows the Cronos bank.", "/report shows this hour.", "covenantfelt.xyz"].join("\n");
+        : ["<b>FELT</b>", "CRONOS FLOOR", RULE, "/floor — house, burned, lottery pot", "/report — this hour", "/help — these commands", "covenantfelt.xyz"].join("\n");
     await say(text, message.message_id);
   }
 }
