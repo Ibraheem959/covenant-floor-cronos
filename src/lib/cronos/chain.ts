@@ -66,7 +66,7 @@ export type ChainJob = {
   reason: string;
 };
 
-export type ChainProposal = { to: string; amount: bigint; open: boolean };
+export type ChainProposal = { to: string; amount: bigint; open: boolean; sigs: boolean[] };
 
 type Eth = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
@@ -167,6 +167,7 @@ export async function readDesk(address = "") {
       reason: row.reason,
     });
   }
+  const packed = BigInt(await provider.getStorage(FLOOR, 29));
   return {
     pot,
     round,
@@ -178,6 +179,7 @@ export async function readDesk(address = "") {
       to: proposal.to,
       amount: proposal.amount,
       open: proposal.open,
+      sigs: [Boolean(packed & 1n), Boolean((packed >> 8n) & 1n), Boolean((packed >> 16n) & 1n)],
     } satisfies ChainProposal,
   };
 }

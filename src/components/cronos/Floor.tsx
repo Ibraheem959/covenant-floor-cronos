@@ -724,14 +724,14 @@ function HousePage() {
           <Field label="Destination" value={to} onChange={setTo} />
           <Field label="Amount · FELT" value={amount} onChange={setAmount} />
           <div className="flex flex-wrap gap-2">
-            <Go disabled={busy} onClick={() => void run(async () => { await proposeHouse(to, parseFelt(amount)); })}>Propose</Go>
-            <Go quiet disabled={busy} onClick={() => void run(async () => { await approveHouse(); })}>Approve</Go>
-            <Go quiet disabled={busy} onClick={() => void run(async () => { await sendHouse(); })}>Send</Go>
-            <Go quiet disabled={busy} onClick={() => void run(async () => { await rejectHouse(); })}>Reject</Go>
+            <Go disabled={busy || Boolean(proposal)} onClick={() => void run(async () => { await proposeHouse(to, parseFelt(amount)); })}>Propose</Go>
+            <Go quiet disabled={busy || !proposal || Boolean(proposal.sigs[signerIndex])} onClick={() => void run(async () => { await approveHouse(); })}>Approve</Go>
+            <Go disabled={busy || !proposal || proposal.sigs.filter(Boolean).length < 2 || !proposal.sigs[signerIndex]} onClick={() => void run(async () => { await sendHouse(); await refresh(); })}>{busy ? "Check the wallet" : "Send"}</Go>
+            <Go quiet disabled={busy || !proposal} onClick={() => void run(async () => { await rejectHouse(); })}>Reject</Go>
           </div>
         </>
       ) : <p className="text-sm text-muted">Connect an owner wallet to move the bank.</p>}
-      {proposal ? <p className="text-sm">Waiting: {formatFelt(proposal.amount)} FELT to {short(proposal.to)}. Disconnect, connect a different signer, then press Approve. Send works after two signers have signed.</p> : <p className="text-sm text-muted">No withdrawal is waiting. A second signer is only used for a withdrawal.</p>}
+      {proposal ? <p className="text-sm">{formatFelt(proposal.amount)} FELT to {short(proposal.to)}. Signed: {proposal.sigs.map((ok, i) => `signer ${i + 1} ${ok ? "yes" : "no"}`).join(", ")}. {proposal.sigs.filter(Boolean).length >= 2 ? "Press Send. The FELT does not move until that transaction confirms." : "One more signer has to press Approve. Connecting the wallet is not a signature."}</p> : <p className="text-sm text-muted">No withdrawal is waiting. Propose, a second signer presses Approve, then either of them presses Send.</p>}
       <Bomb text={local} />
     </div>
   );
